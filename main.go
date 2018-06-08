@@ -51,6 +51,14 @@ type Schedule struct {
 }
 
 type BetRequest struct {
+	UserId        string  `json:"user_id"`
+	ScheduleId    int     `json:"schedule_id"`
+	BettingMoney  int     `json:"betting_money"`
+	BettingResult int     `json:"betting_result"`
+	BettingOdds   float64 `json:"betting_odds"`
+}
+
+type authorizeRequest struct {
 }
 
 // TODO: 配置信息会以配置文件的形式呈现
@@ -235,8 +243,29 @@ func handleNewSchedule(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "schedule_id": lastId})
 }
 
+// TODO: 必须先验证下用户下注的合法性，比如有没有那么多金币
 func handleBet(c *gin.Context) {
-
+	var betRequest BetRequest
+	if c.Bind(&betRequest) != nil {
+		illegalParametersRsp(c)
+		return
+	}
+	stmt, err := db.Prepare("INSERT INTO " +
+		"bet(user_id,schedule_id,betting_monery,betting_result,betting_odds) " +
+		"VALUES (?,?,?,?,?)")
+	if err != nil {
+		insertScheduleFailedRsp(c)
+		fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
+		return
+	}
+	result, err := stmt.Exec(betRequest.UserId, betRequest.ScheduleId,
+		betRequest.BettingMoney, betRequest.BettingResult, betRequest.BettingOdds)
+	if err != nil {
+		insertScheduleFailedRsp(c)
+		fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK"})
 }
 
 func handleAuthorize(c *gin.Context) {
@@ -247,6 +276,11 @@ func handleBettingHistory(c *gin.Context) {
 
 }
 
+func handleResetPassword(c *gin.Context) {
+
+}
+
+// TODO: 还有一个每天送金币的功能
 func init() {
 	db = sqlDB()
 }
@@ -259,5 +293,6 @@ func main() {
 	router.POST("/update_schedule", handleUpdateSchedule)
 	router.POST("/bet", handleBet)
 	router.POST("/authorize", handleAuthorize)
+	router.POST("/reset_password", handleResetPassword)
 	router.Run(":9614")
 }
