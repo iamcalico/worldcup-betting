@@ -116,6 +116,8 @@ type User struct {
 	Money               float64 `json:"money"`
 	EnableResetPassword bool    `json:"enable_reset_password"`
 	LastLoginTime       string  `json:"last_login_time"`
+	WinCount            int     `json:"omitempty"`
+	BetCount            int     `json:"bet_count"`
 }
 
 type RewardHistory struct {
@@ -141,10 +143,11 @@ type AuthorizeRequest struct {
 // TODO: 配置信息会以配置文件的形式呈现
 func sqlDB() *sql.DB {
 	cfg := mysql.Config{
-		User:                 "root",
-		Passwd:               "123456",
-		Net:                  "tcp",
-		Addr:                 "localhost",
+		User:   "root",
+		Passwd: "123456",
+		Net:    "tcp",
+		Addr:   "localhost",
+		//Addr:                 "10.211.55.18",
 		DBName:               "betting",
 		AllowNativePasswords: true,
 	}
@@ -286,15 +289,19 @@ func handleUpdateSchedule(c *gin.Context) {
 			rows, _ := db.Query("SELECT * FROM bet WHERE schedule_id = ?", schedule.ScheduleID)
 			for rows.Next() {
 				rows.Scan(&betRequest.UserId, &betRequest.ScheduleId, &betRequest.BettingMoney, &betRequest.BettingResult, &betRequest.BettingOdds)
+				// 说明竞猜成功
 				if ScheduleStatus(betRequest.BettingResult) == ScheduleStatus(schedule.ScheduleStatus) {
-					var money float64
-					rows, _ := db.Query("SELECT money FROM user WHERE user_id = ?", betRequest.UserId)
+					var (
+						money     float64
+						win_count int
+					)
+					rows, _ := db.Query("SELECT money,win_count FROM user WHERE user_id = ?", betRequest.UserId)
 					if rows.Next() {
-						rows.Scan(&money)
+						rows.Scan(&money, &win_count)
 					}
-					stmt, _ := db.Prepare("UPDATE user SET money = ? WHERE user_id = ?")
+					stmt, _ := db.Prepare("UPDATE user SET money = ?,win_count = ? WHERE user_id = ?")
 					currentMoney := float64(betRequest.BettingMoney)*betRequest.BettingOdds + money
-					stmt.Exec(currentMoney, betRequest.UserId)
+					stmt.Exec(currentMoney, win_count+1, betRequest.UserId)
 				}
 			}
 
@@ -317,30 +324,40 @@ func handleNewSchedule(c *gin.Context) {
 		illegalParametersRsp(c)
 		return
 	}
-	stmt, err := db.Prepare("INSERT INTO " +
-		"schedule(home_team,away_team,home_team_win_odds,away_team_win_odds,tied_odds,schedule_time,schedule_group,schedule_type,schedule_status,disable_betting) " +
-		"VALUES (?,?,?,?,?,?,?,?,?,?)")
-	if err != nil {
-		operateMySQLFailedRsp(c)
-		fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
-		return
+
+	rows, _ := db.Query("SELECT schedule_id FROM schedule WHERE schedule_time = ?", schedule.ScheduleTime)
+
+	// 如果已经有了这场赛事，就不再插入，避免重复的创建动作
+	if rows.Next() {
+		var id int
+		rows.Scan(&id)
+		c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "schedule_id": id})
+	} else {
+		stmt, err := db.Prepare("INSERT INTO " +
+			"schedule(home_team,away_team,home_team_win_odds,away_team_win_odds,tied_odds,schedule_time,schedule_group,schedule_type,schedule_status,disable_betting) " +
+			"VALUES (?,?,?,?,?,?,?,?,?,?)")
+		if err != nil {
+			operateMySQLFailedRsp(c)
+			fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
+			return
+		}
+		result, err := stmt.Exec(schedule.HomeTeam, schedule.AwayTeam,
+			schedule.HomeTeamWinOdds, schedule.AwayTeamWinOdds, schedule.TiedOdds,
+			schedule.ScheduleTime, schedule.ScheduleGroup, schedule.ScheduleType,
+			schedule.ScheduleStatus, schedule.DisableBetting)
+		if err != nil {
+			operateMySQLFailedRsp(c)
+			fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
+			return
+		}
+		lastId, err := result.LastInsertId()
+		if err != nil {
+			operateMySQLFailedRsp(c)
+			fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "schedule_id": lastId})
 	}
-	result, err := stmt.Exec(schedule.HomeTeam, schedule.AwayTeam,
-		schedule.HomeTeamWinOdds, schedule.AwayTeamWinOdds, schedule.TiedOdds,
-		schedule.ScheduleTime, schedule.ScheduleGroup, schedule.ScheduleType,
-		schedule.ScheduleStatus, schedule.DisableBetting)
-	if err != nil {
-		operateMySQLFailedRsp(c)
-		fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
-		return
-	}
-	lastId, err := result.LastInsertId()
-	if err != nil {
-		operateMySQLFailedRsp(c)
-		fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "schedule_id": lastId})
 }
 
 func handleBet(c *gin.Context) {
@@ -377,8 +394,10 @@ func handleBet(c *gin.Context) {
 				return
 			}
 
+			var betCount int
+
 			// 验证用户是否有足够的钱进行下注
-			rows, err = db.Query("SELECT money FROM user WHERE user_id = ?", betRequest.UserId)
+			rows, err = db.Query("SELECT money, bet_count FROM user WHERE user_id = ?", betRequest.UserId)
 			if err != nil {
 				operateMySQLFailedRsp(c)
 				fmt.Fprintf(os.Stderr, "query mysql failed, err: %v\n", err)
@@ -386,7 +405,7 @@ func handleBet(c *gin.Context) {
 			}
 			if rows.Next() {
 				var money float64
-				err := rows.Scan(&money)
+				err := rows.Scan(&money, &betCount)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "scan rows: %v failed, error: %v\n", rows, err)
 					operateMySQLFailedRsp(c)
@@ -417,13 +436,13 @@ func handleBet(c *gin.Context) {
 				}
 
 				// 更新 user 表中用户的金币（正确来说，应该这几个操作是一个 事务 操作）
-				stmt, err = db.Prepare("UPDATE user SET money = ? WHERE user_id = ?")
+				stmt, err = db.Prepare("UPDATE user SET money = ?, bet_count = ? WHERE user_id = ?")
 				if err != nil {
 					operateMySQLFailedRsp(c)
 					fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
 					return
 				}
-				result, err = stmt.Exec(int(money)-betRequest.BettingMoney, betRequest.UserId)
+				result, err = stmt.Exec(int(money)-betRequest.BettingMoney, betCount+1, betRequest.UserId)
 				if err != nil {
 					operateMySQLFailedRsp(c)
 					fmt.Fprintf(os.Stderr, "update schedule failed, result:%v, err: %v\n", result, err)
@@ -469,7 +488,8 @@ func handleAuthorize(c *gin.Context) {
 	loginTime := tm.Format("2006-01-02 15:04:05")
 	if rows.Next() {
 		var user User
-		err := rows.Scan(&user.UserId, &user.EnglishName, &user.ChineseName, &user.Password, &user.Money, &user.EnableResetPassword, &user.LastLoginTime)
+		err := rows.Scan(&user.UserId, &user.EnglishName, &user.ChineseName, &user.Password,
+			&user.Money, &user.EnableResetPassword, &user.LastLoginTime, &user.WinCount, &user.BetCount)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "scan rows: %v failed, error: %v\n", rows, err)
 			queryUserFailedRsp(c)
@@ -482,10 +502,6 @@ func handleAuthorize(c *gin.Context) {
 			return
 		}
 
-		isReward, rewardMoney := dailyReward(user.UserId, loginTimeStamp)
-		if isReward {
-			user.Money += float64(rewardMoney)
-		}
 		// 更新登陆时间
 		stmt, err := db.Prepare("UPDATE user SET money = ?, last_login_time = ? WHERE user_id = ?")
 		if err != nil {
@@ -500,19 +516,19 @@ func handleAuthorize(c *gin.Context) {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "user_id": user.UserId, "money": user.Money, "daily_reward": rewardMoney})
+		c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "user_id": user.UserId, "money": user.Money})
 	} else {
 		// 说明是第一次登陆
 		stmt, err := db.Prepare("INSERT INTO " +
-			"user(rtx_name,chinese_name,password,money,enable_reset_password,last_login_time) " +
-			"VALUES (?,?,?,?,?,?)")
+			"user(rtx_name,chinese_name,password,money,enable_reset_password,last_login_time,win_count,bet_count) " +
+			"VALUES (?,?,?,?,?,?,?,?)")
 		if err != nil {
 			operateMySQLFailedRsp(c)
 			fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
 			return
 		}
 		result, err := stmt.Exec(authorizeRequest.EnglishName, authorizeRequest.ChineseName, authorizeRequest.Password,
-			defaultMoney, false, loginTime)
+			defaultMoney, false, loginTime, 0, 0)
 		if err != nil {
 			operateMySQLFailedRsp(c)
 			fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
@@ -528,7 +544,7 @@ func handleAuthorize(c *gin.Context) {
 	}
 }
 
-func dailyReward(userID int, loginTimeStamp int64) (bool, int) {
+func isDailyReward(userID int, loginTimeStamp int64) bool {
 	tm := time.Unix(loginTimeStamp, 0)
 	lowerBound := tm.Format("2006-01-02") + " 00:00:00"
 	upperBound := tm.Format("2006-01-02") + " 23:59:59"
@@ -540,16 +556,10 @@ func dailyReward(userID int, loginTimeStamp int64) (bool, int) {
 
 	// 如果查到 reward 表中已经有了记录，说明今天已经送过金币
 	if rows.Next() {
-		return false, 0
-	} else {
-		// 说明今天还没有送金币
-		stmt, _ := db.Prepare("INSERT INTO " + "reward(user_id, reward_time, reward_money) " + "VALUES (?,?,?)")
-		_, err = stmt.Exec(userID, tm.Format("2006-01-02 15:03:04"), defaultRewardDailyMoney)
-		if err != nil {
-			return false, 0
-		}
-		return true, defaultRewardDailyMoney
+		return false
 	}
+
+	return true
 }
 
 func handleBettingHistory(c *gin.Context) {
@@ -636,7 +646,8 @@ func handleGrantResetPassword(c *gin.Context) {
 }
 
 type RankRsp struct {
-	RTXName     string  `json:"rtx_name"`
+	UserID      int     `json:"user_id"`
+	RTXName     string  `json:"en_name"`
 	ChineseName string  `json:"cn_name"`
 	Money       float64 `json:"money"`
 }
@@ -648,15 +659,15 @@ func handleRank(c *gin.Context) {
 	}
 
 	ranks := []RankRsp{}
-	rows, err := db.Query("SELECT rtx_name, chinese_name, money FROM user ORDER BY money limit ?", limit)
+	rows, err := db.Query("SELECT user_id, rtx_name, chinese_name, money FROM user ORDER BY money desc limit ?", limit)
 	if err != nil {
-		queryMySQLFailedRsp(c)
+		operateMySQLFailedRsp(c)
 		return
 	}
 
 	for rows.Next() {
 		var rank RankRsp
-		err := rows.Scan(&rank.RTXName, &rank.ChineseName, &rank.Money)
+		err := rows.Scan(&rank.UserID, &rank.RTXName, &rank.ChineseName, &rank.Money)
 		if err != nil {
 			queryMySQLFailedRsp(c)
 			return
@@ -691,28 +702,79 @@ func handleRewardHistory(c *gin.Context) {
 	})
 }
 
+func rankNumber(userID int) int {
+	rows, _ := db.Query("SELECT u.rank FROM (select user_id, (@ranknum:=@ranknum+1) as rank from user,(select (@ranknum :=0) ) b order by money desc)u where u.user_id = ?", userID)
+	if rows.Next() {
+		var rank int
+		rows.Scan(&rank)
+		return rank
+	}
+	return 0
+}
+
 func handleMyInfo(c *gin.Context) {
 	userID := c.Query("user_id")
-	rows, _ := db.Query("SELECT user_id,rtx_name,chinese_name,money FROM user WHERE user_id = ?", userID)
+	userID2, err := strconv.Atoi(userID)
+	if err != nil {
+		illegalParametersRsp(c)
+		return
+	}
+	isDailyReward := isDailyReward(userID2, time.Now().Unix())
+	rows, _ := db.Query("SELECT user_id,rtx_name,chinese_name,money,win_count,bet_count FROM user WHERE user_id = ?", userID2)
+
+	rank := rankNumber(userID2)
 	if rows.Next() {
 		var user User
-		err := rows.Scan(&user.UserId, &user.EnglishName, &user.ChineseName, &user.Money)
+		err := rows.Scan(&user.UserId, &user.EnglishName, &user.ChineseName, &user.Money, &user.WinCount, &user.BetCount)
 		if err != nil {
 			operateMySQLFailedRsp(c)
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"status":  0,
-			"desc":    "OK",
-			"id":      user.UserId,
-			"money":   user.Money,
-			"cn_name": user.ChineseName,
-			"en_name": user.EnglishName,
+			"status":       0,
+			"desc":         "OK",
+			"id":           user.UserId,
+			"money":        user.Money,
+			"cn_name":      user.ChineseName,
+			"en_name":      user.EnglishName,
+			"daily_reward": isDailyReward,
+			"rank":         rank,
+			"win_count":    user.WinCount,
+			"bet_count":    user.BetCount,
 		})
 	} else {
 		userNotExist(c)
 		return
 	}
+}
+
+type DailyRewardRequest struct {
+	UserID int `json:"user_id"`
+}
+
+func handleDailyReward(c *gin.Context) {
+	var req DailyRewardRequest
+	if c.Bind(&req) != nil {
+		illegalParametersRsp(c)
+		return
+	}
+	tm := time.Unix(time.Now().Unix(), 0)
+	stmt, _ := db.Prepare("INSERT INTO " + "reward(user_id, reward_time, reward_money) " + "VALUES (?,?,?)")
+	_, err := stmt.Exec(req.UserID, tm.Format("2006-01-02 15:03:04"), defaultRewardDailyMoney)
+	if err != nil {
+		operateMySQLFailedRsp(c)
+		return
+	}
+
+	var money float64
+	rows, _ := db.Query("SELECT money FROM user WHERE user_id = ?", req.UserID)
+	rows.Scan(&money)
+	stmt, _ = db.Prepare("UPDATE user SET money = ?")
+	stmt.Exec(money + float64(defaultRewardDailyMoney))
+	c.JSON(http.StatusOK, gin.H{
+		"status": 0,
+		"desc":   "OK",
+	})
 }
 
 func init() {
@@ -749,6 +811,7 @@ func main() {
 	router.POST("/update_schedule", handleUpdateSchedule)
 	router.POST("/bet", handleBet)
 	router.POST("/authorize", handleAuthorize)
+	router.POST("/daily_reward", handleDailyReward)
 	router.POST("/reset_password", handleResetPassword)
 	router.POST("/grant_reset_password", handleGrantResetPassword)
 	router.Run(":9614")
