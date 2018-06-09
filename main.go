@@ -16,6 +16,7 @@ import (
 var (
 	db         *sql.DB
 	countryMap = map[string]int{
+		"待定":    0,
 		"俄罗斯":   1,
 		"沙特阿拉伯": 2,
 		"埃及":    3,
