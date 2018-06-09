@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
 )
@@ -37,8 +39,9 @@ const (
 
 // TODO: 应该将这个参数弄成配置文件
 const (
-	timiUserCSVFile = "timi_users.csv"
-	defaultMoney    = 5000
+	timiUserCSVFile         = "timi_users.csv"
+	defaultMoney            = 5000
+	defaultRewardDailyMoney = 50
 )
 
 // 每个 Schedule 代表一场世界杯赛事
@@ -62,7 +65,14 @@ type User struct {
 	ChineseName         string  `json:"cn_name"`
 	Password            string  `json:"password"`
 	Money               float64 `json:"money"`
-	EnableResetPassword bool
+	EnableResetPassword bool    `json:"enable_reset_password"`
+	LastLoginTime       string  `json:"last_login_time"`
+}
+
+type RewardHistory struct {
+	UserId      int    `json:"user_id"`
+	RewardTime  string `json:"reward_time"`
+	RewardMoney int    `json:"reward_money"`
 }
 
 type BetRequest struct {
@@ -231,7 +241,6 @@ func handleNewSchedule(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "schedule_id": lastId})
 }
 
-// TODO: 必须先验证下用户下注的合法性，比如有没有那么多金币
 func handleBet(c *gin.Context) {
 	var betRequest BetRequest
 	if c.Bind(&betRequest) != nil {
@@ -316,10 +325,13 @@ func handleAuthorize(c *gin.Context) {
 		return
 	}
 
+	// 必须验证用户在白名单之内
 	if isIllegalUser(authorizeRequest.ChineseName, authorizeRequest.EnglishName) != true {
 		illegalUserRsp(c)
 		return
 	}
+
+	// 判读是否第一次登陆，如果是第一次登陆，则数据库中找不到相应的记录
 	rows, err := db.Query("SELECT * FROM user WHERE chinese_name = ? and rtx_name = ?",
 		authorizeRequest.ChineseName, authorizeRequest.EnglishName)
 	if err != nil {
@@ -328,9 +340,12 @@ func handleAuthorize(c *gin.Context) {
 		return
 	}
 
+	loginTimeStamp := time.Now().Unix()
+	tm := time.Unix(loginTimeStamp, 0)
+	loginTime := tm.Format("2006-01-02 15:04:05")
 	if rows.Next() {
 		var user User
-		err := rows.Scan(&user.UserId, &user.RTXName, &user.ChineseName, &user.Password, &user.Money)
+		err := rows.Scan(&user.UserId, &user.RTXName, &user.ChineseName, &user.Password, &user.Money, &user.EnableResetPassword, &user.LastLoginTime)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "scan rows: %v failed, error: %v\n", rows, err)
 			queryUserFailedRsp(c)
@@ -342,18 +357,37 @@ func handleAuthorize(c *gin.Context) {
 			incorrectPasswordRsp(c)
 			return
 		}
+
+		if isReward, rewardMoney := dailyReward(user.UserId, loginTimeStamp); isReward {
+			user.Money += float64(rewardMoney)
+		}
+		// 更新登陆时间
+		stmt, err := db.Prepare("UPDATE user SET money = ?, last_login_time = ? WHERE user_id = ?")
+		if err != nil {
+			updateMySQLFailedRsp(c)
+			fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
+			return
+		}
+		result, err := stmt.Exec(user.Money, loginTime, user.UserId)
+		if err != nil {
+			updateMySQLFailedRsp(c)
+			fmt.Fprintf(os.Stderr, "update schedule failed, result:%v, err: %v\n", result, err)
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "user_id": user.UserId, "money": user.Money})
 	} else {
 		// 说明是第一次登陆
 		stmt, err := db.Prepare("INSERT INTO " +
-			"user(rtx_name,chinese_name,password,money) " +
-			"VALUES (?,?,?,?)")
+			"user(rtx_name,chinese_name,password,money,enable_reset_password,last_login_time) " +
+			"VALUES (?,?,?,?,?,?)")
 		if err != nil {
 			insertMySQLFailedRsp(c)
 			fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
 			return
 		}
-		result, err := stmt.Exec(authorizeRequest.EnglishName, authorizeRequest.ChineseName, authorizeRequest.Password, defaultMoney)
+		result, err := stmt.Exec(authorizeRequest.EnglishName, authorizeRequest.ChineseName, authorizeRequest.Password,
+			defaultMoney, false, loginTime)
 		if err != nil {
 			insertMySQLFailedRsp(c)
 			fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
@@ -366,6 +400,30 @@ func handleAuthorize(c *gin.Context) {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "user_id": lastId, "money": defaultMoney})
+	}
+}
+
+func dailyReward(userID int, loginTimeStamp int64) (bool, int) {
+	tm := time.Unix(loginTimeStamp, 0)
+	lowerBound := tm.Format("2006-01-02") + " 00:00:00"
+	upperBound := tm.Format("2006-01-02") + " 23:59:59"
+	rows, err := db.Query("SELECT * FROM reward WHERE user_id = ? and reward_time > ? and reward_time < ?",
+		userID, lowerBound, upperBound)
+	if err != nil {
+		log.Fatalf("query db failed, error: %v\n", err)
+	}
+
+	// 如果查到 reward 表中已经有了记录，说明今天已经送过金币
+	if rows.Next() {
+		return false, 0
+	} else {
+		// 说明今天还没有送金币
+		stmt, _ := db.Prepare("INSERT INTO " + "reward(user_id, reward_time, reward_money) " + "VALUES (?,?,?)")
+		_, err = stmt.Exec(userID, tm.Format("2006-01-02 15:03:04"), defaultRewardDailyMoney)
+		if err != nil {
+			return false, 0
+		}
+		return true, defaultMoney
 	}
 }
 
@@ -447,8 +505,65 @@ func handleResetPassword(c *gin.Context) {
 	}
 }
 
+// TODO: 加一个授权更新密码的接口
 func handleGrantResetPassword(c *gin.Context) {
 
+}
+
+type RankRsp struct {
+	RTXName     string  `json:"rtx_name"`
+	ChineseName string  `json:"cn_name"`
+	Money       float64 `json:"money"`
+}
+
+func handleRank(c *gin.Context) {
+	limit := c.Query("limit")
+	if limit == "" {
+		limit = "20"
+	}
+
+	ranks := []RankRsp{}
+	rows, err := db.Query("SELECT rtx_name, chinese_name, money FROM user ORDER BY money limit ?", limit)
+	if err != nil {
+		queryMySQLFailedRsp(c)
+		return
+	}
+
+	for rows.Next() {
+		var rank RankRsp
+		err := rows.Scan(&rank.RTXName, &rank.ChineseName, &rank.Money)
+		if err != nil {
+			queryMySQLFailedRsp(c)
+			return
+		}
+		ranks = append(ranks, rank)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status": 0,
+		"desc":   "OK",
+		"rank":   ranks,
+	})
+}
+
+func handleRewardHistory(c *gin.Context) {
+	userID := c.Query("user_id")
+
+	rewardHistory := []RewardHistory{}
+	rows, _ := db.Query("SELECT * FROM reward WHERE user_id = ?", userID)
+	for rows.Next() {
+		var history RewardHistory
+		err := rows.Scan(&history.UserId, &history.RewardTime, &history.RewardMoney)
+		if err != nil {
+			queryMySQLFailedRsp(c)
+			return
+		}
+		rewardHistory = append(rewardHistory, history)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status":         0,
+		"desc":           "OK",
+		"reward_history": rewardHistory,
+	})
 }
 
 // TODO: 还有一个每天送金币的功能
@@ -457,11 +572,12 @@ func init() {
 	readUserFile(timiUserCSVFile)
 }
 
-// TODO: 加一个授权更新密码的接口
 func main() {
 	router := gin.Default()
 	router.GET("/schedules", handleSchedules)
+	router.GET("/rank", handleRank)
 	router.GET("/betting_history", handleBettingHistory)
+	router.GET("/reward_history", handleRewardHistory)
 	router.PUT("/new_schedule", handleNewSchedule)
 	router.POST("/update_schedule", handleUpdateSchedule)
 	router.POST("/bet", handleBet)
