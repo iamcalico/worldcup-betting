@@ -34,10 +34,10 @@ func updateMySQLFailedRsp(c *gin.Context) {
 	})
 }
 
-func insertMySQLFailedRsp(c *gin.Context) {
+func operateMySQLFailedRsp(c *gin.Context) {
 	c.JSON(http.StatusInternalServerError, gin.H{
 		"status": 5,
-		"desc":   "Insert mysql failed",
+		"desc":   "Operate mysql failed",
 	})
 }
 
@@ -87,5 +87,12 @@ func notAllowResetPassword(c *gin.Context) {
 	c.JSON(http.StatusBadRequest, gin.H{
 		"status": 12,
 		"desc":   "Not allow to reset password",
+	})
+}
+
+func disableBet(c *gin.Context) {
+	c.JSON(http.StatusBadRequest, gin.H{
+		"status": 12,
+		"desc":   "Disable bet",
 	})
 }
