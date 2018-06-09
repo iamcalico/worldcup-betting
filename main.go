@@ -291,6 +291,7 @@ func handleUpdateSchedule(c *gin.Context) {
 			for rows.Next() {
 				rows.Scan(&betRequest.UserId, &betRequest.ScheduleId, &betRequest.BettingMoney, &betRequest.BettingResult, &betRequest.BettingOdds)
 				// 说明竞猜成功
+				// FIXME: 连续执行两次更新结果的操作有问题，应该在 bet 表中加入一个已经结算完毕的字段，避免重复结算
 				if ScheduleStatus(betRequest.BettingResult) == ScheduleStatus(schedule.ScheduleStatus) {
 					var (
 						money     float64
@@ -651,6 +652,8 @@ type RankRsp struct {
 	RTXName     string  `json:"en_name"`
 	ChineseName string  `json:"cn_name"`
 	Money       float64 `json:"money"`
+	WinCount    int     `json:"win_count"`
+	BetCount    int     `json:"bet_count"`
 }
 
 func handleRank(c *gin.Context) {
@@ -660,7 +663,7 @@ func handleRank(c *gin.Context) {
 	}
 
 	ranks := []RankRsp{}
-	rows, err := db.Query("SELECT user_id, rtx_name, chinese_name, money FROM user ORDER BY money desc limit ?", limit)
+	rows, err := db.Query("SELECT user_id, rtx_name, chinese_name, money,win_count,bet_count FROM user ORDER BY money desc limit ?", limit)
 	if err != nil {
 		operateMySQLFailedRsp(c)
 		return
@@ -668,7 +671,7 @@ func handleRank(c *gin.Context) {
 
 	for rows.Next() {
 		var rank RankRsp
-		err := rows.Scan(&rank.UserID, &rank.RTXName, &rank.ChineseName, &rank.Money)
+		err := rows.Scan(&rank.UserID, &rank.RTXName, &rank.ChineseName, &rank.Money, &rank.WinCount, &rank.BetCount)
 		if err != nil {
 			queryMySQLFailedRsp(c)
 			return
@@ -759,23 +762,46 @@ func handleDailyReward(c *gin.Context) {
 		illegalParametersRsp(c)
 		return
 	}
-	tm := time.Unix(time.Now().Unix(), 0)
-	stmt, _ := db.Prepare("INSERT INTO " + "reward(user_id, reward_time, reward_money) " + "VALUES (?,?,?)")
-	_, err := stmt.Exec(req.UserID, tm.Format("2006-01-02 15:03:04"), defaultRewardDailyMoney)
-	if err != nil {
-		operateMySQLFailedRsp(c)
+
+	timestamp := time.Now().Unix()
+	if isDailyReward(req.UserID, timestamp) {
+		tm := time.Unix(timestamp, 0)
+		stmt, _ := db.Prepare("INSERT INTO " + "reward(user_id, reward_time, reward_money) " + "VALUES (?,?,?)")
+		_, err := stmt.Exec(req.UserID, tm.Format("2006-01-02 15:03:04"), defaultRewardDailyMoney)
+		if err != nil {
+			operateMySQLFailedRsp(c)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			return
+		}
+
+		var money float64
+		rows, err := db.Query("SELECT money FROM user WHERE user_id = ?", req.UserID)
+		if err != nil {
+			operateMySQLFailedRsp(c)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			return
+		}
+		if rows.Next() {
+			err = rows.Scan(&money)
+			if err != nil {
+				operateMySQLFailedRsp(c)
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				return
+			}
+			stmt, _ = db.Prepare("UPDATE user SET money = ? where user_id = ?")
+			stmt.Exec(money+float64(defaultRewardDailyMoney), req.UserID)
+			c.JSON(http.StatusOK, gin.H{
+				"status": 0,
+				"desc":   "OK",
+			})
+		} else {
+			userNotExist(c)
+			return
+		}
+	} else {
+		alreayGetDailyReward(c)
 		return
 	}
-
-	var money float64
-	rows, _ := db.Query("SELECT money FROM user WHERE user_id = ?", req.UserID)
-	rows.Scan(&money)
-	stmt, _ = db.Prepare("UPDATE user SET money = ?")
-	stmt.Exec(money + float64(defaultRewardDailyMoney))
-	c.JSON(http.StatusOK, gin.H{
-		"status": 0,
-		"desc":   "OK",
-	})
 }
 
 func init() {

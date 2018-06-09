@@ -96,3 +96,10 @@ func disableBet(c *gin.Context) {
 		"desc":   "Disable bet",
 	})
 }
+
+func alreayGetDailyReward(c *gin.Context) {
+	c.JSON(http.StatusBadRequest, gin.H{
+		"status": 13,
+		"desc":   "Already get daily reward",
+	})
+}
