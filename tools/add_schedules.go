@@ -42,7 +42,31 @@ type NewScheduleReq struct {
 }
 
 var schedules = []NewScheduleReq{
-	{"Russia", "Saudi Arabia", 1.233, 2.345, 2.345, "2018-06-14 23:00:00", "A", 0, true},
+	{
+		"俄罗斯", "沙特阿拉伯",
+		1.233, 2.345, 2.345,
+		"2018-06-14 23:00:00", "A", 0, false,
+	},
+	{
+		"埃及", "乌拉圭",
+		1.233, 2.345, 2.345,
+		"2018-06-15 20:00:00", "A", 0, false,
+	},
+	{
+		"摩洛哥", "伊朗",
+		1.233, 2.345, 2.345,
+		"2018-06-15 23:00:00", "B", 0, false,
+	},
+	{
+		"葡萄牙", "西班牙",
+		1.233, 2.345, 2.345,
+		"2018-06-16 02:00:00", "B", 0, false,
+	},
+	{
+		"法国", "澳大利亚",
+		1.233, 2.345, 2.345,
+		"2018-06-16 18:00:00", "C", 0, false,
+	},
 }
 
 func main() {
@@ -51,7 +75,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("json marshal error: %v\n", err)
 		}
-		req, err := http.NewRequest("PUT", "http://localhost:9614/new_schedule", bytes.NewBuffer(jsonData))
+		req, err := http.NewRequest("PUT", "http://z1.zhengyinyong.com:9614/new_schedule", bytes.NewBuffer(jsonData))
 		req.Header.Set("Content-Type", "application/json")
 		client := &http.Client{}
 		resp, err := client.Do(req)

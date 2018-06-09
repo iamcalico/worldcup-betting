@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,7 +14,41 @@ import (
 )
 
 var (
-	db *sql.DB
+	db         *sql.DB
+	countryMap = map[string]int{
+		"俄罗斯":   1,
+		"沙特阿拉伯": 2,
+		"埃及":    3,
+		"乌拉圭":   4,
+		"摩洛哥":   5,
+		"伊朗":    6,
+		"葡萄牙":   7,
+		"西班牙":   8,
+		"法国":    9,
+		"澳大利亚":  10,
+		"阿根廷":   11,
+		"冰岛":    12,
+		"秘鲁":    13,
+		"丹麦":    14,
+		"克罗地亚":  15,
+		"尼日利亚":  16,
+		"哥斯达黎加": 17,
+		"塞尔维亚":  18,
+		"德国":    19,
+		"墨西哥":   20,
+		"巴西":    21,
+		"瑞士":    22,
+		"瑞典":    23,
+		"韩国":    24,
+		"比利时":   25,
+		"巴拿马":   26,
+		"突尼斯":   27,
+		"英格兰":   28,
+		"哥伦比亚":  29,
+		"日本":    30,
+		"波兰":    31,
+		"塞纳加尔":  32,
+	}
 )
 
 type ScheduleType int
@@ -33,7 +66,8 @@ const (
 type ScheduleStatus int
 
 const (
-	HomeTeamWin ScheduleStatus = 0 // 主队胜利
+	NotStarted  ScheduleStatus = 0 // 未开始
+	HomeTeamWin                    // 主队胜利
 	AwayTeamWin                    // 客队胜利
 	Draw                           // 平局
 )
@@ -60,9 +94,23 @@ type Schedule struct {
 	DisableBetting  bool           `json:"disable_betting"`    // 是否允许投注
 }
 
+type Schedule2 struct {
+	ScheduleID      int            `json:"schedule_id"`               // 赛事 ID，用以唯一标识每场比赛
+	HomeTeam        int            `json:"home_team"`                 // 主队
+	AwayTeam        int            `json:"away_team"`                 // 客队
+	HomeTeamWinOdds float64        `json:"home_team_win_odds"`        // 主队胜利的赔率
+	AwayTeamWinOdds float64        `json:"away_team_win_odds"`        // 客队胜利的赔率
+	TiedOdds        float64        `json:"tied_odds"`                 // 平局的赔率
+	ScheduleTime    string         `json:"schedule_time"`             // 比赛时间
+	ScheduleGroup   string         `json:"schedule_group"`            // 比赛组别
+	ScheduleType    ScheduleType   `json:"schedule_type"`             // 比赛类别
+	ScheduleStatus  ScheduleStatus `json:"schedule_status,omitempty"` // 比赛状态
+	DisableBetting  bool           `json:"disable_betting"`           // 是否允许投注
+}
+
 type User struct {
 	UserId              int     `json:"user_id"`
-	RTXName             string  `json:"rtx_name"`
+	EnglishName         string  `json:"en_name"`
 	ChineseName         string  `json:"cn_name"`
 	Password            string  `json:"password"`
 	Money               float64 `json:"money"`
@@ -96,7 +144,7 @@ func sqlDB() *sql.DB {
 		User:                 "root",
 		Passwd:               "123456",
 		Net:                  "tcp",
-		Addr:                 "10.211.55.18",
+		Addr:                 "localhost",
 		DBName:               "betting",
 		AllowNativePasswords: true,
 	}
@@ -112,9 +160,9 @@ func sqlDB() *sql.DB {
 	return db
 }
 
-func schedules(db *sql.DB, scheduleType ScheduleType) ([]Schedule, error) {
+func schedules(db *sql.DB, scheduleType ScheduleType) ([]Schedule2, error) {
 	var (
-		schedules []Schedule
+		schedules []Schedule2
 		rows      *sql.Rows
 		err       error
 	)
@@ -125,22 +173,42 @@ func schedules(db *sql.DB, scheduleType ScheduleType) ([]Schedule, error) {
 		rows, err = db.Query("SELECT * FROM schedule WHERE schedule_type = ?", scheduleType)
 	}
 	if err != nil {
-		return []Schedule{}, err
+		return []Schedule2{}, err
 	}
 
 	for rows.Next() {
-		var schedule Schedule
+		var (
+			schedule  Schedule
+			schedule2 Schedule2
+		)
 		err := rows.Scan(&schedule.ScheduleID, &schedule.HomeTeam, &schedule.AwayTeam,
 			&schedule.HomeTeamWinOdds, &schedule.AwayTeamWinOdds, &schedule.TiedOdds,
 			&schedule.ScheduleTime, &schedule.ScheduleGroup, &schedule.ScheduleType,
 			&schedule.ScheduleStatus, &schedule.DisableBetting)
 		if err != nil {
-			return []Schedule{}, err
+			return []Schedule2{}, err
 		}
-		schedules = append(schedules, schedule)
+
+		schedule2.ScheduleID = schedule.ScheduleID
+		schedule2.HomeTeam = countryToID(schedule.HomeTeam)
+		schedule2.AwayTeam = countryToID(schedule.AwayTeam)
+		schedule2.HomeTeamWinOdds = schedule.HomeTeamWinOdds
+		schedule2.AwayTeamWinOdds = schedule.AwayTeamWinOdds
+		schedule2.TiedOdds = schedule.TiedOdds
+		schedule2.ScheduleTime = schedule.ScheduleTime
+		schedule2.ScheduleGroup = schedule.ScheduleGroup
+		schedule2.ScheduleType = schedule.ScheduleType
+		schedule2.DisableBetting = schedule.DisableBetting
+		schedule2.ScheduleStatus = schedule.ScheduleStatus
+
+		schedules = append(schedules, schedule2)
 	}
 
 	return schedules, nil
+}
+
+func countryToID(country string) int {
+	return countryMap[country]
 }
 
 func handleSchedules(c *gin.Context) {
@@ -401,7 +469,7 @@ func handleAuthorize(c *gin.Context) {
 	loginTime := tm.Format("2006-01-02 15:04:05")
 	if rows.Next() {
 		var user User
-		err := rows.Scan(&user.UserId, &user.RTXName, &user.ChineseName, &user.Password, &user.Money, &user.EnableResetPassword, &user.LastLoginTime)
+		err := rows.Scan(&user.UserId, &user.EnglishName, &user.ChineseName, &user.Password, &user.Money, &user.EnableResetPassword, &user.LastLoginTime)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "scan rows: %v failed, error: %v\n", rows, err)
 			queryUserFailedRsp(c)
@@ -409,12 +477,13 @@ func handleAuthorize(c *gin.Context) {
 		}
 		if user.Password != authorizeRequest.Password {
 			fmt.Fprintf(os.Stderr, "incorrect password, [ch_name:%v, en_name:%v], want: %v, got: %v\n",
-				user.ChineseName, user.RTXName, user.Password, authorizeRequest.Password)
+				user.ChineseName, user.EnglishName, user.Password, authorizeRequest.Password)
 			incorrectPasswordRsp(c)
 			return
 		}
 
-		if isReward, rewardMoney := dailyReward(user.UserId, loginTimeStamp); isReward {
+		isReward, rewardMoney := dailyReward(user.UserId, loginTimeStamp)
+		if isReward {
 			user.Money += float64(rewardMoney)
 		}
 		// 更新登陆时间
@@ -431,7 +500,7 @@ func handleAuthorize(c *gin.Context) {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "user_id": user.UserId, "money": user.Money})
+		c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "user_id": user.UserId, "money": user.Money, "daily_reward": rewardMoney})
 	} else {
 		// 说明是第一次登陆
 		stmt, err := db.Prepare("INSERT INTO " +
@@ -455,7 +524,7 @@ func handleAuthorize(c *gin.Context) {
 			fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "user_id": lastId, "money": defaultMoney})
+		c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "user_id": lastId, "money": defaultMoney, "first_login": true})
 	}
 }
 
@@ -479,7 +548,7 @@ func dailyReward(userID int, loginTimeStamp int64) (bool, int) {
 		if err != nil {
 			return false, 0
 		}
-		return true, defaultMoney
+		return true, defaultRewardDailyMoney
 	}
 }
 
@@ -492,7 +561,7 @@ func handleBettingHistory(c *gin.Context) {
 		return
 	}
 
-	var betHistory []BetRequest
+	betHistory := []BetRequest{}
 	rows, err := db.Query("SELECT * FROM bet WHERE user_id = ?", userID)
 	if err != nil {
 		log.Fatalf("query db failed, error: %v\n", err)
@@ -530,7 +599,7 @@ func handleResetPassword(c *gin.Context) {
 
 	if rows.Next() {
 		var user User
-		err := rows.Scan(&user.UserId, &user.RTXName, &user.ChineseName, &user.Password, &user.Money, &user.EnableResetPassword)
+		err := rows.Scan(&user.UserId, &user.EnglishName, &user.ChineseName, &user.Password, &user.Money, &user.EnableResetPassword)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "scan rows: %v failed, error: %v\n", rows, err)
 			queryUserFailedRsp(c)
@@ -622,19 +691,60 @@ func handleRewardHistory(c *gin.Context) {
 	})
 }
 
+func handleMyInfo(c *gin.Context) {
+	userID := c.Query("user_id")
+	rows, _ := db.Query("SELECT user_id,rtx_name,chinese_name,money FROM user WHERE user_id = ?", userID)
+	if rows.Next() {
+		var user User
+		err := rows.Scan(&user.UserId, &user.EnglishName, &user.ChineseName, &user.Money)
+		if err != nil {
+			operateMySQLFailedRsp(c)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"status":  0,
+			"desc":    "OK",
+			"id":      user.UserId,
+			"money":   user.Money,
+			"cn_name": user.ChineseName,
+			"en_name": user.EnglishName,
+		})
+	} else {
+		userNotExist(c)
+		return
+	}
+}
+
 func init() {
 	db = sqlDB()
 	readUserFile(timiUserCSVFile)
 }
 
+func CORSMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, XMLHttpRequest, "+
+			"Accept-Encoding, X-CSRF-Token, Authorization")
+		if c.Request.Method == "OPTIONS" {
+			c.String(200, "ok")
+			return
+		}
+		c.Next()
+	}
+}
+
 func main() {
 	router := gin.Default()
+	router.Use(CORSMiddleware())
+
 	router.PUT("/new_schedule", handleNewSchedule)
 
 	router.GET("/schedules", handleSchedules)
 	router.GET("/rank", handleRank)
 	router.GET("/betting_history", handleBettingHistory)
 	router.GET("/reward_history", handleRewardHistory)
+	router.GET("/my", handleMyInfo)
 
 	router.POST("/update_schedule", handleUpdateSchedule)
 	router.POST("/bet", handleBet)

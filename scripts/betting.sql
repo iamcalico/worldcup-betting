@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS `bet` (
   DEFAULT CHARSET = utf8;
 
 CREATE TABLE IF NOT EXISTS `user` (
-  user_id      varchar(200),
+  user_id      int,
   rtx_name     varchar(200),
   chinese_name varchar(200),
   password     varchar(200),
