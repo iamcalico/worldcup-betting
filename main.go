@@ -90,7 +90,7 @@ var CountryInfoList = []CountryInfo{
 	{25, "比利时", "http://flags.fmcdn.net/data/flags/w1160/be.png"},
 	{26, "巴拿马", "http://flags.fmcdn.net/data/flags/w1160/pa.png"},
 	{27, "突尼斯", "http://flags.fmcdn.net/data/flags/w1160/tn.png"},
-	{28, "英格兰", "https://en.wikipedia.org/wiki/Flag_of_England#/media/File:Flag_of_England.svg"},
+	{28, "英格兰", "https://upload.wikimedia.org/wikipedia/en/thumb/b/be/Flag_of_England.svg/800px-Flag_of_England.svg.png"},
 	{29, "哥伦比亚", "http://flags.fmcdn.net/data/flags/w1160/co.png"},
 	{30, "日本", "http://flags.fmcdn.net/data/flags/w1160/jp.png"},
 	{31, "波兰", "http://flags.fmcdn.net/data/flags/w1160/pl.png"},
@@ -880,8 +880,76 @@ func handleCountry(c *gin.Context) {
 	})
 }
 
-func handleTips(c *gin.Context) {
+type TipsType int
 
+const (
+	DailyReward TipsType = 1
+	GlobalInfo
+	GameRule
+)
+
+type Tips struct {
+	TipsID        TipsType `json:"tips_id"`
+	Content       string   `json:"content"`
+	EnableDisplay bool     `json:"enable_display"`
+}
+
+type AddTipsRequest struct {
+	TipsList []Tips `json:"tips"`
+}
+
+func handleTips(c *gin.Context) {
+	rows, err := db.Query("SELECT * FROM tips")
+	if err != nil {
+		operateMySQLFailedRsp(c)
+		return
+	}
+	var (
+		tips           Tips
+		addTipsRequest AddTipsRequest
+	)
+	for rows.Next() {
+		err := rows.Scan(&tips.TipsID, &tips.Content, &tips.EnableDisplay)
+		if err != nil {
+			operateMySQLFailedRsp(c)
+			return
+		}
+		addTipsRequest.TipsList = append(addTipsRequest.TipsList, tips)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status": 0,
+		"desc":   "OK",
+		"tips":   addTipsRequest,
+	})
+}
+
+func handleAddTips(c *gin.Context) {
+	var addTipsRequest AddTipsRequest
+	if c.Bind(&addTipsRequest) != nil {
+		illegalParametersRsp(c)
+		return
+	}
+
+	for _, t := range addTipsRequest.TipsList {
+		stmt, err := db.Prepare("REPLACE INTO " +
+			"tips(tips_id,content,enable_display) VALUES (?,?,?)")
+		if err != nil {
+			operateMySQLFailedRsp(c)
+			fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
+			return
+		}
+		result, err := stmt.Exec(t.TipsID, t.Content, t.EnableDisplay)
+		if err != nil {
+			operateMySQLFailedRsp(c)
+			fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": 0,
+		"desc":   "OK",
+	})
 }
 
 func init() {
@@ -924,5 +992,6 @@ func main() {
 	router.POST("/daily_reward", handleDailyReward)
 	router.POST("/reset_password", handleResetPassword)
 	router.POST("/grant_reset_password", handleGrantResetPassword)
+	router.POST("/add_tips", handleAddTips)
 	router.Run(":9614")
 }
