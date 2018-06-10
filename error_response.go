@@ -99,7 +99,14 @@ func disableBet(c *gin.Context) {
 
 func alreayGetDailyReward(c *gin.Context) {
 	c.JSON(http.StatusBadRequest, gin.H{
-		"status": 13,
+		"status": 14,
 		"desc":   "Already get daily reward",
+	})
+}
+
+func uploadFileFailed(c *gin.Context) {
+	c.JSON(http.StatusBadRequest, gin.H{
+		"status": 15,
+		"desc":   "Upload file failed",
 	})
 }

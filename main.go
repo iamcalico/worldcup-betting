@@ -127,6 +127,7 @@ const (
 )
 
 var config Config
+var GdisplayFileList = []string{}
 
 // 每个 Schedule 代表一场世界杯赛事
 type Schedule struct {
@@ -203,6 +204,7 @@ type Config struct {
 	InitialMoney     int    `mapstructure:"initial_money"`
 	DailyRewardMoney int    `mapstructure:"daily_reward_money"`
 	EnableWhiteList  bool   `mapstructure:"enable_white_list"`
+	DomainName       string `mapstructure:"domain_name"`
 }
 
 func sqlDB() *sql.DB {
@@ -986,18 +988,10 @@ func handleCountry(c *gin.Context) {
 	})
 }
 
-type TipsType int
-
-const (
-	DailyReward TipsType = 1
-	GlobalInfo
-	GameRule
-)
-
 type Tips struct {
-	TipsID        TipsType `json:"tips_id"`
-	Content       string   `json:"content"`
-	EnableDisplay bool     `json:"enable_display"`
+	TipsID        int    `json:"tips_id"`
+	Content       string `json:"content"`
+	EnableDisplay bool   `json:"enable_display"`
 }
 
 type AddTipsRequest struct {
@@ -1060,10 +1054,46 @@ func handleAddTips(c *gin.Context) {
 	})
 }
 
+func handleUploadPictures(c *gin.Context) {
+	form, err := c.MultipartForm()
+	if err != nil {
+		c.String(http.StatusBadRequest, fmt.Sprintf("get form err: %s", err.Error()))
+		return
+	}
+	files := form.File["files"]
+	var displayFileList []string
+	for _, file := range files {
+		if err := c.SaveUploadedFile(file, "./assets/"+file.Filename); err != nil {
+			fmt.Fprintf(os.Stderr, "upload file err: %s", err.Error())
+			uploadFileFailed(c)
+			return
+		}
+		displayFileList = append(displayFileList, config.DomainName+"/assets/"+file.Filename)
+	}
+
+	GdisplayFileList = displayFileList
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": 0,
+		"desc":   fmt.Sprintf("Uploaded successfully %d files", len(files)),
+	})
+}
+
+func handleDisplay(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"status":  0,
+		"desc":    "OK",
+		"display": GdisplayFileList,
+	})
+}
+
 func init() {
 	parseConfig()
 	db = sqlDB()
 	readUserFile(config.CSVNameList)
+	if err := os.Mkdir("assets", 0755); err != nil {
+		log.Fatalf("create assets failed, error: %v\n", err)
+	}
 }
 
 func CORSMiddleware() gin.HandlerFunc {
@@ -1094,6 +1124,7 @@ func main() {
 	router.GET("/my", handleMyInfo)
 	router.GET("/country", handleCountry)
 	router.GET("/tips", handleTips)
+	router.GET("/display", handleDisplay)
 
 	router.POST("/update_schedule", handleUpdateSchedule)
 	router.POST("/bet", handleBet)
@@ -1102,5 +1133,8 @@ func main() {
 	router.POST("/reset_password", handleResetPassword)
 	router.POST("/grant_reset_password", handleGrantResetPassword)
 	router.POST("/add_tips", handleAddTips)
+	router.POST("/upload_pictures", handleUploadPictures)
+
+	router.Static("/assets", "./assets")
 	router.Run(":9614")
 }
