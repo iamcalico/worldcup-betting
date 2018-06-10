@@ -349,7 +349,8 @@ func handleNewSchedule(c *gin.Context) {
 		return
 	}
 
-	rows, _ := db.Query("SELECT schedule_id FROM schedule WHERE schedule_time = ?", schedule.ScheduleTime)
+	rows, _ := db.Query("SELECT schedule_id FROM schedule WHERE schedule_time = ? and home_team = ? and away_team = ? ",
+		schedule.ScheduleTime, schedule.HomeTeam, schedule.AwayTeam)
 
 	// 如果已经有了这场赛事，就不再插入，避免重复的创建动作
 	if rows.Next() {
