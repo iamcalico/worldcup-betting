@@ -253,6 +253,7 @@ func schedules(db *sql.DB, scheduleType ScheduleType) ([]Schedule2, error) {
 	} else {
 		rows, err = db.Query("SELECT * FROM schedule WHERE schedule_type = ?", scheduleType)
 	}
+	defer rows.Close()
 	if err != nil {
 		return []Schedule2{}, err
 	}
@@ -285,7 +286,6 @@ func schedules(db *sql.DB, scheduleType ScheduleType) ([]Schedule2, error) {
 
 		schedules = append(schedules, schedule2)
 	}
-
 	return schedules, nil
 }
 
@@ -304,7 +304,7 @@ func schedules2(db *sql.DB, scheduleType ScheduleType) ([]Schedule, error) {
 	if err != nil {
 		return []Schedule{}, err
 	}
-
+	defer rows.Close()
 	for rows.Next() {
 		var (
 			schedule Schedule
@@ -319,7 +319,6 @@ func schedules2(db *sql.DB, scheduleType ScheduleType) ([]Schedule, error) {
 
 		schedules = append(schedules, schedule)
 	}
-
 	return schedules, nil
 }
 
@@ -403,6 +402,7 @@ func handleUpdateSchedule(c *gin.Context) {
 
 	// 先验证要更新的赛程是在数据库中
 	rows, err := db.Query("SELECT * FROM schedule WHERE schedule_id = ?", schedule.ScheduleID)
+	defer rows.Close()
 	if err != nil {
 		operateMySQLFailedRsp(c)
 		fmt.Fprintf(os.Stderr, "query schedule failed, err: %v\n", err)
@@ -424,6 +424,7 @@ func handleUpdateSchedule(c *gin.Context) {
 				schedule.HomeTeamWinOdds, schedule.AwayTeamWinOdds, schedule.TiedOdds,
 				schedule.ScheduleTime, schedule.ScheduleGroup, schedule.ScheduleType, schedule.ScheduleStatus,
 				schedule.DisableBetting, schedule.EnableDisplay, schedule.ScheduleID)
+			defer stmt.Close()
 			if err != nil {
 				operateMySQLFailedRsp(c)
 				fmt.Fprintf(os.Stderr, "update schedule failed, result:%v, err: %v\n", result, err)
@@ -484,7 +485,7 @@ func handleNewSchedule(c *gin.Context) {
 
 	rows, _ := db.Query("SELECT schedule_id FROM schedule WHERE schedule_time = ? and home_team = ? and away_team = ? ",
 		schedule.ScheduleTime, schedule.HomeTeam, schedule.AwayTeam)
-
+	defer rows.Close()
 	// 如果已经有了这场赛事，就不再插入，避免重复的创建动作
 	if rows.Next() {
 		var id int
@@ -503,6 +504,7 @@ func handleNewSchedule(c *gin.Context) {
 			schedule.HomeTeamWinOdds, schedule.AwayTeamWinOdds, schedule.TiedOdds,
 			schedule.ScheduleTime, schedule.ScheduleGroup, schedule.ScheduleType,
 			schedule.ScheduleStatus, schedule.DisableBetting, schedule.EnableDisplay)
+		defer stmt.Close()
 		if err != nil {
 			operateMySQLFailedRsp(c)
 			fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
@@ -528,6 +530,7 @@ func handleBet(c *gin.Context) {
 	// 验证这场赛事已经可以下注
 	var disableBetting bool
 	rows, err := db.Query("SELECT disable_betting FROM schedule WHERE schedule_id = ?", betRequest.ScheduleId)
+	defer rows.Close()
 	if err != nil {
 		operateMySQLFailedRsp(c)
 		fmt.Fprintf(os.Stderr, "query mysql failed, err: %v\n", err)
@@ -547,6 +550,7 @@ func handleBet(c *gin.Context) {
 			// 验证用户是否已经对这场比赛下过注
 			rows, err := db.Query("SELECT * FROM bet WHERE user_id = ? and schedule_id = ?",
 				betRequest.UserId, betRequest.ScheduleId)
+			defer rows.Close()
 			if rows.Next() {
 				alreadyBet(c)
 				return
@@ -580,6 +584,7 @@ func handleBet(c *gin.Context) {
 				stmt, err := db.Prepare("INSERT INTO " +
 					"bet(user_id,schedule_id,betting_money,betting_result,betting_odds,bet_status,win_money) " +
 					"VALUES (?,?,?,?,?,?,?)")
+				defer stmt.Close()
 				if err != nil {
 					operateMySQLFailedRsp(c)
 					fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
@@ -637,6 +642,7 @@ func handleAuthorize(c *gin.Context) {
 	// 判读是否第一次登陆，如果是第一次登陆，则数据库中找不到相应的记录
 	rows, err := db.Query("SELECT * FROM user WHERE chinese_name = ? and rtx_name = ?",
 		authorizeRequest.ChineseName, authorizeRequest.EnglishName)
+	defer rows.Close()
 	if err != nil {
 		queryMySQLFailedRsp(c)
 		fmt.Fprintf(os.Stderr, "query schedule failed, err: %v\n", err)
@@ -664,6 +670,7 @@ func handleAuthorize(c *gin.Context) {
 
 		// 更新登陆时间
 		stmt, err := db.Prepare("UPDATE user SET money = ?, last_login_time = ? WHERE user_id = ?")
+		defer stmt.Close()
 		if err != nil {
 			updateMySQLFailedRsp(c)
 			fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
@@ -689,6 +696,7 @@ func handleAuthorize(c *gin.Context) {
 		}
 		result, err := stmt.Exec(authorizeRequest.EnglishName, authorizeRequest.ChineseName, authorizeRequest.Password,
 			config.InitialMoney, false, loginTime, 0, 0)
+		defer stmt.Close()
 		if err != nil {
 			operateMySQLFailedRsp(c)
 			fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
@@ -733,6 +741,7 @@ func handleBettingHistory(c *gin.Context) {
 
 	betHistory := []BetRequest{}
 	rows, err := db.Query("SELECT * FROM bet WHERE user_id = ?", userID)
+	defer rows.Close()
 	if err != nil {
 		log.Fatalf("query db failed, error: %v\n", err)
 	}
@@ -784,6 +793,7 @@ func handleResetPassword(c *gin.Context) {
 				return
 			}
 			result, err := stmt.Exec(authorizeRequest.Password, false, user.UserId)
+			defer stmt.Close()
 			if err != nil {
 				updateMySQLFailedRsp(c)
 				fmt.Fprintf(os.Stderr, "update schedule failed, result:%v, err: %v\n", result, err)
@@ -822,6 +832,7 @@ func handleRank(c *gin.Context) {
 
 	ranks := []RankRsp{}
 	rows, err := db.Query("SELECT user_id, rtx_name, chinese_name, money,win_count,bet_count FROM user ORDER BY money desc limit ?", limit)
+	defer rows.Close()
 	if err != nil {
 		operateMySQLFailedRsp(c)
 		return
@@ -848,6 +859,7 @@ func handleRewardHistory(c *gin.Context) {
 
 	rewardHistory := []RewardHistory{}
 	rows, _ := db.Query("SELECT * FROM reward WHERE user_id = ?", userID)
+	defer rows.Close()
 	for rows.Next() {
 		var history RewardHistory
 		err := rows.Scan(&history.UserId, &history.RewardTime, &history.RewardMoney)
@@ -866,6 +878,7 @@ func handleRewardHistory(c *gin.Context) {
 
 func rankNumber(userID int) int {
 	rows, _ := db.Query("SELECT u.rank FROM (select user_id, (@ranknum:=@ranknum+1) as rank from user,(select (@ranknum :=0) ) b order by money desc)u where u.user_id = ?", userID)
+	defer rows.Close()
 	if rows.Next() {
 		var rank int
 		rows.Scan(&rank)
@@ -883,7 +896,7 @@ func handleMyInfo(c *gin.Context) {
 	}
 	isDailyReward := isDailyReward(userID2, time.Now().Unix())
 	rows, _ := db.Query("SELECT user_id,rtx_name,chinese_name,money,win_count,bet_count FROM user WHERE user_id = ?", userID2)
-
+	defer rows.Close()
 	rank := rankNumber(userID2)
 	if rows.Next() {
 		var user User
@@ -926,6 +939,7 @@ func handleDailyReward(c *gin.Context) {
 		tm := time.Unix(timestamp, 0)
 		stmt, _ := db.Prepare("INSERT INTO " + "reward(user_id, reward_time, reward_money) " + "VALUES (?,?,?)")
 		_, err := stmt.Exec(req.UserID, tm.Format("2006-01-02 15:03:04"), config.DailyRewardMoney)
+		defer stmt.Close()
 		if err != nil {
 			operateMySQLFailedRsp(c)
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -934,6 +948,7 @@ func handleDailyReward(c *gin.Context) {
 
 		var money float64
 		rows, err := db.Query("SELECT money FROM user WHERE user_id = ?", req.UserID)
+		defer rows.Close()
 		if err != nil {
 			operateMySQLFailedRsp(c)
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -948,6 +963,7 @@ func handleDailyReward(c *gin.Context) {
 			}
 			stmt, _ = db.Prepare("UPDATE user SET money = ? where user_id = ?")
 			stmt.Exec(money+float64(config.DailyRewardMoney), req.UserID)
+			defer stmt.Close()
 			c.JSON(http.StatusOK, gin.H{
 				"status": 0,
 				"desc":   "OK",
@@ -990,6 +1006,7 @@ type AddTipsRequest struct {
 
 func handleTips(c *gin.Context) {
 	rows, err := db.Query("SELECT * FROM tips")
+	defer rows.Close()
 	if err != nil {
 		operateMySQLFailedRsp(c)
 		return
@@ -1029,6 +1046,7 @@ func handleAddTips(c *gin.Context) {
 			return
 		}
 		result, err := stmt.Exec(t.TipsID, t.Content, t.EnableDisplay)
+		defer stmt.Close()
 		if err != nil {
 			operateMySQLFailedRsp(c)
 			fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
