@@ -289,6 +289,40 @@ func schedules(db *sql.DB, scheduleType ScheduleType) ([]Schedule2, error) {
 	return schedules, nil
 }
 
+func schedules2(db *sql.DB, scheduleType ScheduleType) ([]Schedule, error) {
+	var (
+		schedules []Schedule
+		rows      *sql.Rows
+		err       error
+	)
+
+	if scheduleType == All {
+		rows, err = db.Query("SELECT * FROM schedule")
+	} else {
+		rows, err = db.Query("SELECT * FROM schedule WHERE schedule_type = ?", scheduleType)
+	}
+	if err != nil {
+		return []Schedule{}, err
+	}
+
+	for rows.Next() {
+		var (
+			schedule Schedule
+		)
+		err := rows.Scan(&schedule.ScheduleID, &schedule.HomeTeam, &schedule.AwayTeam,
+			&schedule.HomeTeamWinOdds, &schedule.AwayTeamWinOdds, &schedule.TiedOdds,
+			&schedule.ScheduleTime, &schedule.ScheduleGroup, &schedule.ScheduleType,
+			&schedule.ScheduleStatus, &schedule.DisableBetting, &schedule.EnableDisplay)
+		if err != nil {
+			return []Schedule{}, err
+		}
+
+		schedules = append(schedules, schedule)
+	}
+
+	return schedules, nil
+}
+
 func countryToID(country string) int {
 	return countryMap[country]
 }
@@ -313,6 +347,39 @@ func handleSchedules(c *gin.Context) {
 	}
 
 	schedules, err := schedules(db, queryScheduleType)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "get schedules failed, error: %v\n", err)
+		operateMySQLFailedRsp(c)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":    0,
+		"desc":      "OK",
+		"schedules": schedules,
+	})
+}
+
+func handleSchedules2(c *gin.Context) {
+	scheduleType := c.Query("type")
+
+	var queryScheduleType ScheduleType
+	if scheduleType == "" {
+		queryScheduleType = All
+	} else {
+		scheduleType2, err := strconv.Atoi(scheduleType)
+		if err != nil {
+			illegalParametersRsp(c)
+			return
+		}
+		queryScheduleType = ScheduleType(scheduleType2)
+		if queryScheduleType < GroupMatches || queryScheduleType > All {
+			illegalParametersRsp(c)
+			return
+		}
+	}
+
+	schedules, err := schedules2(db, queryScheduleType)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "get schedules failed, error: %v\n", err)
 		operateMySQLFailedRsp(c)
@@ -1002,6 +1069,7 @@ func main() {
 	router.PUT("/new_schedule", handleNewSchedule)
 
 	router.GET("/schedules", handleSchedules)
+	router.GET("/schedules2", handleSchedules2)
 	router.GET("/rank", handleRank)
 	router.GET("/betting_history", handleBettingHistory)
 	router.GET("/reward_history", handleRewardHistory)
