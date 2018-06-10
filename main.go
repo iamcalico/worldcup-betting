@@ -118,6 +118,14 @@ const (
 	Draw                           // 平局
 )
 
+type BetStatus int
+
+const (
+	BetNotFinish = 0
+	WinBet       = 1
+	LostBet      = 2
+)
+
 var config Config
 
 // 每个 Schedule 代表一场世界杯赛事
@@ -175,6 +183,8 @@ type BetRequest struct {
 	BettingMoney  int     `json:"betting_money"`
 	BettingResult int     `json:"betting_result"`
 	BettingOdds   float64 `json:"betting_odds"`
+	BettingStatus int     `json:"bet_status"`
+	WinMoney      float64 `json:"win_money"`
 }
 
 type AuthorizeRequest struct {
@@ -336,7 +346,7 @@ func handleUpdateSchedule(c *gin.Context) {
 			stmt, err := db.Prepare("UPDATE schedule SET home_team = ?, away_team = ?, " +
 				"home_team_win_odds = ?, away_team_win_odds = ?, tied_odds = ?, " +
 				"schedule_time = ?, schedule_group = ?, schedule_type = ?, " +
-				"schedule_status = ?, disable_betting = ?, enable_display = ?" + "WHERE schedule_id = ?")
+				"schedule_status = ?, disable_betting = ?, enable_display = ? " + " WHERE schedule_id = ?")
 			if err != nil {
 				updateMySQLFailedRsp(c)
 				fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
@@ -354,24 +364,34 @@ func handleUpdateSchedule(c *gin.Context) {
 
 			// 遍历竞猜表，计算出每个人竞猜的结果，如果竞猜成功，增加相应用户的金币数
 			var betRequest BetRequest
-			rows, _ := db.Query("SELECT * FROM bet WHERE schedule_id = ?", schedule.ScheduleID)
+			rows, _ := db.Query("SELECT * FROM bet WHERE schedule_id = ? and bet_status = ?",
+				schedule.ScheduleID, BetNotFinish)
 			for rows.Next() {
-				rows.Scan(&betRequest.UserId, &betRequest.ScheduleId, &betRequest.BettingMoney, &betRequest.BettingResult, &betRequest.BettingOdds)
+				rows.Scan(&betRequest.UserId, &betRequest.ScheduleId, &betRequest.BettingMoney, &betRequest.BettingResult,
+					&betRequest.BettingOdds, &betRequest.BettingStatus, &betRequest.WinMoney)
 				// 说明竞猜成功
-				// FIXME: 连续执行两次更新结果的操作有问题，应该在 bet 表中加入一个已经结算完毕的字段，避免重复结算
+				var (
+					money     float64
+					win_count int
+					win_money float64
+					betStatus BetStatus
+				)
 				if ScheduleStatus(betRequest.BettingResult) == ScheduleStatus(schedule.ScheduleStatus) {
-					var (
-						money     float64
-						win_count int
-					)
+					betStatus = WinBet
 					rows, _ := db.Query("SELECT money,win_count FROM user WHERE user_id = ?", betRequest.UserId)
 					if rows.Next() {
 						rows.Scan(&money, &win_count)
 					}
 					stmt, _ := db.Prepare("UPDATE user SET money = ?,win_count = ? WHERE user_id = ?")
-					currentMoney := float64(betRequest.BettingMoney)*betRequest.BettingOdds + money
+					win_money = float64(betRequest.BettingMoney) * betRequest.BettingOdds
+					currentMoney := win_money + money
 					stmt.Exec(currentMoney, win_count+1, betRequest.UserId)
+				} else {
+					betStatus = LostBet
+					win_money = -float64(betRequest.BettingMoney)
 				}
+				stmt, _ := db.Prepare("UPDATE bet SET bet_status = ?,win_money = ? WHERE user_id = ? and schedule_id = ?")
+				stmt.Exec(betStatus, win_money, betRequest.UserId, betRequest.ScheduleId)
 			}
 
 			c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK"})
@@ -490,15 +510,15 @@ func handleBet(c *gin.Context) {
 
 				// 在 bet 表插入相应的记录
 				stmt, err := db.Prepare("INSERT INTO " +
-					"bet(user_id,schedule_id,betting_money,betting_result,betting_odds) " +
-					"VALUES (?,?,?,?,?)")
+					"bet(user_id,schedule_id,betting_money,betting_result,betting_odds,bet_status,win_money) " +
+					"VALUES (?,?,?,?,?,?,?)")
 				if err != nil {
 					operateMySQLFailedRsp(c)
 					fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
 					return
 				}
 				result, err := stmt.Exec(betRequest.UserId, betRequest.ScheduleId,
-					betRequest.BettingMoney, betRequest.BettingResult, betRequest.BettingOdds)
+					betRequest.BettingMoney, betRequest.BettingResult, betRequest.BettingOdds, 0, BetNotFinish)
 				if err != nil {
 					operateMySQLFailedRsp(c)
 					fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
@@ -649,7 +669,7 @@ func handleBettingHistory(c *gin.Context) {
 	for rows.Next() {
 		var betRequest BetRequest
 		err := rows.Scan(&betRequest.UserId, &betRequest.ScheduleId,
-			&betRequest.BettingMoney, &betRequest.BettingResult, &betRequest.BettingOdds)
+			&betRequest.BettingMoney, &betRequest.BettingResult, &betRequest.BettingOdds, &betRequest.BettingStatus, &betRequest.WinMoney)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "scan rows: %v failed, error: %v\n", rows, err)
 		}

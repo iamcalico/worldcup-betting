@@ -92,7 +92,7 @@ func notAllowResetPassword(c *gin.Context) {
 
 func disableBet(c *gin.Context) {
 	c.JSON(http.StatusBadRequest, gin.H{
-		"status": 12,
+		"status": 13,
 		"desc":   "Disable bet",
 	})
 }
