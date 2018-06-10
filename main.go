@@ -55,6 +55,48 @@ var (
 	}
 )
 
+type CountryInfo struct {
+	CountryID     int    `json:"id"`
+	CountryName   string `json:"name"`
+	CountryPicURL string `json:"logo"`
+}
+
+var CountryInfoList = []CountryInfo{
+	{0, "待定", "unknown"},
+	{1, "俄罗斯", "http://flags.fmcdn.net/data/flags/w1160/ru.png"},
+	{2, "沙特阿拉伯", "http://flags.fmcdn.net/data/flags/w1160/sa.png"},
+	{3, "埃及", "http://flags.fmcdn.net/data/flags/w1160/eg.png"},
+	{4, "乌拉圭", "http://flags.fmcdn.net/data/flags/w1160/uy.png"},
+	{5, "摩洛哥", "http://flags.fmcdn.net/data/flags/w1160/ma.png"},
+	{6, "伊朗", "http://flags.fmcdn.net/data/flags/w1160/ir.png"},
+	{7, "葡萄牙", "http://flags.fmcdn.net/data/flags/w1160/pt.png"},
+	{8, "西班牙", "http://flags.fmcdn.net/data/flags/w1160/es.png"},
+	{9, "法国", "http://flags.fmcdn.net/data/flags/w1160/fr.png"},
+	{10, "澳大利亚", "http://flags.fmcdn.net/data/flags/w1160/au.png"},
+	{11, "阿根廷", "http://flags.fmcdn.net/data/flags/w1160/ar.png"},
+	{12, "冰岛", "http://flags.fmcdn.net/data/flags/w1160/is.png"},
+	{13, "秘鲁", "http://flags.fmcdn.net/data/flags/w1160/pe.png"},
+	{14, "丹麦", "http://flags.fmcdn.net/data/flags/w1160/dk.png"},
+	{15, "克罗地亚", "http://flags.fmcdn.net/data/flags/w1160/hr.png"},
+	{16, "尼日利亚", "http://flags.fmcdn.net/data/flags/w1160/ng.png"},
+	{17, "哥斯达黎加", "http://flags.fmcdn.net/data/flags/w1160/cr.png"},
+	{18, "塞尔维亚", "http://flags.fmcdn.net/data/flags/w1160/rs.png"},
+	{19, "德国", "http://flags.fmcdn.net/data/flags/w1160/de.png"},
+	{20, "墨西哥", "http://flags.fmcdn.net/data/flags/w1160/mx.png"},
+	{21, "巴西", "http://flags.fmcdn.net/data/flags/w1160/br.png"},
+	{22, "瑞士", "http://flags.fmcdn.net/data/flags/w1160/ch.png"},
+	{23, "瑞典", "http://flags.fmcdn.net/data/flags/w1160/se.png"},
+	{24, "韩国", "http://flags.fmcdn.net/data/flags/w1160/kr.png"},
+	{25, "比利时", "http://flags.fmcdn.net/data/flags/w1160/be.png"},
+	{26, "巴拿马", "http://flags.fmcdn.net/data/flags/w1160/pa.png"},
+	{27, "突尼斯", "http://flags.fmcdn.net/data/flags/w1160/tn.png"},
+	{28, "英格兰", "https://en.wikipedia.org/wiki/Flag_of_England#/media/File:Flag_of_England.svg"},
+	{29, "哥伦比亚", "http://flags.fmcdn.net/data/flags/w1160/co.png"},
+	{30, "日本", "http://flags.fmcdn.net/data/flags/w1160/jp.png"},
+	{31, "波兰", "http://flags.fmcdn.net/data/flags/w1160/pl.png"},
+	{32, "塞纳加尔", "http://flags.fmcdn.net/data/flags/w1160/sn.png"},
+}
+
 type ScheduleType int
 
 const (
@@ -91,6 +133,7 @@ type Schedule struct {
 	ScheduleType    ScheduleType   `json:"schedule_type"`      // 比赛类别
 	ScheduleStatus  ScheduleStatus `json:"schedule_status"`    // 比赛状态
 	DisableBetting  bool           `json:"disable_betting"`    // 是否允许投注
+	EnableDisplay   bool           `json:"enable_dispaly"`     // 是否显示在投注页
 }
 
 type Schedule2 struct {
@@ -105,6 +148,7 @@ type Schedule2 struct {
 	ScheduleType    ScheduleType   `json:"schedule_type"`             // 比赛类别
 	ScheduleStatus  ScheduleStatus `json:"schedule_status,omitempty"` // 比赛状态
 	DisableBetting  bool           `json:"disable_betting"`           // 是否允许投注
+	EnableDisplay   bool           `json:"enable_dispaly"`            // 是否显示在投注页
 }
 
 type User struct {
@@ -210,7 +254,7 @@ func schedules(db *sql.DB, scheduleType ScheduleType) ([]Schedule2, error) {
 		err := rows.Scan(&schedule.ScheduleID, &schedule.HomeTeam, &schedule.AwayTeam,
 			&schedule.HomeTeamWinOdds, &schedule.AwayTeamWinOdds, &schedule.TiedOdds,
 			&schedule.ScheduleTime, &schedule.ScheduleGroup, &schedule.ScheduleType,
-			&schedule.ScheduleStatus, &schedule.DisableBetting)
+			&schedule.ScheduleStatus, &schedule.DisableBetting, &schedule.EnableDisplay)
 		if err != nil {
 			return []Schedule2{}, err
 		}
@@ -226,6 +270,7 @@ func schedules(db *sql.DB, scheduleType ScheduleType) ([]Schedule2, error) {
 		schedule2.ScheduleType = schedule.ScheduleType
 		schedule2.DisableBetting = schedule.DisableBetting
 		schedule2.ScheduleStatus = schedule.ScheduleStatus
+		schedule2.EnableDisplay = schedule.EnableDisplay
 
 		schedules = append(schedules, schedule2)
 	}
@@ -291,7 +336,7 @@ func handleUpdateSchedule(c *gin.Context) {
 			stmt, err := db.Prepare("UPDATE schedule SET home_team = ?, away_team = ?, " +
 				"home_team_win_odds = ?, away_team_win_odds = ?, tied_odds = ?, " +
 				"schedule_time = ?, schedule_group = ?, schedule_type = ?, " +
-				"schedule_status = ?, disable_betting = ? " + "WHERE schedule_id = ?")
+				"schedule_status = ?, disable_betting = ?, enable_display = ?" + "WHERE schedule_id = ?")
 			if err != nil {
 				updateMySQLFailedRsp(c)
 				fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
@@ -300,7 +345,7 @@ func handleUpdateSchedule(c *gin.Context) {
 			result, err := stmt.Exec(schedule.HomeTeam, schedule.AwayTeam,
 				schedule.HomeTeamWinOdds, schedule.AwayTeamWinOdds, schedule.TiedOdds,
 				schedule.ScheduleTime, schedule.ScheduleGroup, schedule.ScheduleType, schedule.ScheduleStatus,
-				schedule.DisableBetting, schedule.ScheduleID)
+				schedule.DisableBetting, schedule.EnableDisplay, schedule.ScheduleID)
 			if err != nil {
 				operateMySQLFailedRsp(c)
 				fmt.Fprintf(os.Stderr, "update schedule failed, result:%v, err: %v\n", result, err)
@@ -359,8 +404,8 @@ func handleNewSchedule(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "schedule_id": id})
 	} else {
 		stmt, err := db.Prepare("INSERT INTO " +
-			"schedule(home_team,away_team,home_team_win_odds,away_team_win_odds,tied_odds,schedule_time,schedule_group,schedule_type,schedule_status,disable_betting) " +
-			"VALUES (?,?,?,?,?,?,?,?,?,?)")
+			"schedule(home_team,away_team,home_team_win_odds,away_team_win_odds,tied_odds,schedule_time,schedule_group,schedule_type,schedule_status,disable_betting,enable_display) " +
+			"VALUES (?,?,?,?,?,?,?,?,?,?,?)")
 		if err != nil {
 			operateMySQLFailedRsp(c)
 			fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
@@ -369,7 +414,7 @@ func handleNewSchedule(c *gin.Context) {
 		result, err := stmt.Exec(schedule.HomeTeam, schedule.AwayTeam,
 			schedule.HomeTeamWinOdds, schedule.AwayTeamWinOdds, schedule.TiedOdds,
 			schedule.ScheduleTime, schedule.ScheduleGroup, schedule.ScheduleType,
-			schedule.ScheduleStatus, schedule.DisableBetting)
+			schedule.ScheduleStatus, schedule.DisableBetting, schedule.EnableDisplay)
 		if err != nil {
 			operateMySQLFailedRsp(c)
 			fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
@@ -827,6 +872,18 @@ func handleDailyReward(c *gin.Context) {
 	}
 }
 
+func handleCountry(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"status":  0,
+		"desc":    "OK",
+		"country": CountryInfoList,
+	})
+}
+
+func handleTips(c *gin.Context) {
+
+}
+
 func init() {
 	parseConfig()
 	db = sqlDB()
@@ -858,6 +915,8 @@ func main() {
 	router.GET("/betting_history", handleBettingHistory)
 	router.GET("/reward_history", handleRewardHistory)
 	router.GET("/my", handleMyInfo)
+	router.GET("/country", handleCountry)
+	router.GET("/tips", handleTips)
 
 	router.POST("/update_schedule", handleUpdateSchedule)
 	router.POST("/bet", handleBet)
