@@ -202,6 +202,7 @@ type Config struct {
 	CSVNameList      string `mapstructure:"csv_name_list"`
 	InitialMoney     int    `mapstructure:"initial_money"`
 	DailyRewardMoney int    `mapstructure:"daily_reward_money"`
+	EnableWhiteList  bool   `mapstructure:"enable_white_list"`
 }
 
 func sqlDB() *sql.DB {
@@ -559,9 +560,11 @@ func handleAuthorize(c *gin.Context) {
 	}
 
 	// 必须验证用户在白名单之内
-	if isIllegalUser(authorizeRequest.ChineseName, authorizeRequest.EnglishName) != true {
-		illegalUserRsp(c)
-		return
+	if config.EnableWhiteList {
+		if isIllegalUser(authorizeRequest.ChineseName, authorizeRequest.EnglishName) != true {
+			illegalUserRsp(c)
+			return
+		}
 	}
 
 	// 判读是否第一次登陆，如果是第一次登陆，则数据库中找不到相应的记录
