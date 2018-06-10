@@ -2,15 +2,18 @@ package main
 
 import (
 	"database/sql"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-sql-driver/mysql"
+	"github.com/spf13/viper"
 )
 
 var (
@@ -73,12 +76,7 @@ const (
 	Draw                           // 平局
 )
 
-// TODO: 应该将这个参数弄成配置文件
-const (
-	timiUserCSVFile         = "timi_users.csv"
-	defaultMoney            = 5000
-	defaultRewardDailyMoney = 50
-)
+var config Config
 
 // 每个 Schedule 代表一场世界杯赛事
 type Schedule struct {
@@ -141,15 +139,24 @@ type AuthorizeRequest struct {
 	Password    string `json:"password"` // MD5 之后的密码
 }
 
-// TODO: 配置信息会以配置文件的形式呈现
+type Config struct {
+	MySQLUser        string `mapstructure:"mysql_server"`
+	MySQLPassword    string `mapstructure:"mysql_password"`
+	MySQLNet         string `mapstructure:"mysql_net"`
+	MySQLDBName      string `mapstructure:"mysql_db_name"`
+	MySQLAddr        string `mapstructure:"mysql_addr"`
+	CSVNameList      string `mapstructure:"csv_name_list"`
+	InitialMoney     int    `mapstructure:"initial_money"`
+	DailyRewardMoney int    `mapstructure:"daily_reward_money"`
+}
+
 func sqlDB() *sql.DB {
 	cfg := mysql.Config{
-		User:   "root",
-		Passwd: "123456",
-		Net:    "tcp",
-		Addr:   "localhost",
-		//Addr:                 "10.211.55.18",
-		DBName:               "betting",
+		User:                 config.MySQLUser,
+		Passwd:               config.MySQLPassword,
+		Net:                  config.MySQLNet,
+		Addr:                 config.MySQLAddr,
+		DBName:               config.MySQLDBName,
 		AllowNativePasswords: true,
 	}
 	db, err := sql.Open("mysql", cfg.FormatDSN())
@@ -162,6 +169,21 @@ func sqlDB() *sql.DB {
 		log.Fatalf("db ping test failed, error: %v\n", err)
 	}
 	return db
+}
+
+func parseConfig() {
+	configPath := flag.String("config", "./config.toml", "Specify the config file")
+	flag.Parse()
+	v := viper.New()
+	basename := filepath.Base(*configPath)
+	v.SetConfigName(basename[0:(len(basename) - len(filepath.Ext(basename)))])
+	v.AddConfigPath(filepath.Dir(*configPath))
+	if err := v.ReadInConfig(); err != nil {
+		log.Fatalf("read config error: %v", err)
+	}
+	if err := v.Unmarshal(&config); err != nil {
+		log.Fatalf("unmarshal config error: %v", err)
+	}
 }
 
 func schedules(db *sql.DB, scheduleType ScheduleType) ([]Schedule2, error) {
@@ -530,7 +552,7 @@ func handleAuthorize(c *gin.Context) {
 			return
 		}
 		result, err := stmt.Exec(authorizeRequest.EnglishName, authorizeRequest.ChineseName, authorizeRequest.Password,
-			defaultMoney, false, loginTime, 0, 0)
+			config.InitialMoney, false, loginTime, 0, 0)
 		if err != nil {
 			operateMySQLFailedRsp(c)
 			fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
@@ -542,7 +564,7 @@ func handleAuthorize(c *gin.Context) {
 			fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "user_id": lastId, "money": defaultMoney, "first_login": true})
+		c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "user_id": lastId, "money": config.InitialMoney, "first_login": true})
 	}
 }
 
@@ -767,7 +789,7 @@ func handleDailyReward(c *gin.Context) {
 	if isDailyReward(req.UserID, timestamp) {
 		tm := time.Unix(timestamp, 0)
 		stmt, _ := db.Prepare("INSERT INTO " + "reward(user_id, reward_time, reward_money) " + "VALUES (?,?,?)")
-		_, err := stmt.Exec(req.UserID, tm.Format("2006-01-02 15:03:04"), defaultRewardDailyMoney)
+		_, err := stmt.Exec(req.UserID, tm.Format("2006-01-02 15:03:04"), config.DailyRewardMoney)
 		if err != nil {
 			operateMySQLFailedRsp(c)
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -789,7 +811,7 @@ func handleDailyReward(c *gin.Context) {
 				return
 			}
 			stmt, _ = db.Prepare("UPDATE user SET money = ? where user_id = ?")
-			stmt.Exec(money+float64(defaultRewardDailyMoney), req.UserID)
+			stmt.Exec(money+float64(config.DailyRewardMoney), req.UserID)
 			c.JSON(http.StatusOK, gin.H{
 				"status": 0,
 				"desc":   "OK",
@@ -805,8 +827,9 @@ func handleDailyReward(c *gin.Context) {
 }
 
 func init() {
+	parseConfig()
 	db = sqlDB()
-	readUserFile(timiUserCSVFile)
+	readUserFile(config.CSVNameList)
 }
 
 func CORSMiddleware() gin.HandlerFunc {
