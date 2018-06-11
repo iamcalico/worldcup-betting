@@ -94,7 +94,7 @@ var CountryInfoList = []CountryInfo{
 	{29, "哥伦比亚", "http://flags.fmcdn.net/data/flags/w1160/co.png"},
 	{30, "日本", "http://flags.fmcdn.net/data/flags/w1160/jp.png"},
 	{31, "波兰", "http://flags.fmcdn.net/data/flags/w1160/pl.png"},
-	{32, "塞纳加尔", "http://flags.fmcdn.net/data/flags/w1160/sn.png"},
+	{32, "塞内加尔", "http://flags.fmcdn.net/data/flags/w1160/sn.png"},
 }
 
 type ScheduleType int
@@ -394,7 +394,6 @@ func handleSchedules2(c *gin.Context) {
 	})
 }
 
-// TODO: 这种回复一条 JSON 后就退出的操作有没有什么更优雅的做法
 func handleUpdateSchedule(c *gin.Context) {
 	var schedule Schedule
 	if c.Bind(&schedule) != nil {
@@ -813,6 +812,7 @@ func handleResetPassword(c *gin.Context) {
 }
 
 // TODO: 加一个授权更新密码的接口
+// TODO: 加一个增加用户的接口
 func handleGrantResetPassword(c *gin.Context) {
 
 }
