@@ -147,3 +147,8 @@ type GrantResetPassword struct {
 	ChineseName string `json:"ch_name"`
 	EnglishName string `json:"en_name"`
 }
+
+type UpdateRankReq struct {
+	EnableDisplayRank bool      `json:"enable_display_rank"`
+	Rank              []RankRsp `json:"rank"`
+}

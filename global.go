@@ -84,4 +84,7 @@ var (
 
 	timiUserWhiteList = make(map[string]string)
 	timiNewUsers      *os.File
+
+	GRank       = []RankRsp{}
+	DisplayRank = true
 )

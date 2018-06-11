@@ -688,29 +688,45 @@ func handleRank(c *gin.Context) {
 		limit = "20"
 	}
 
-	ranks := []RankRsp{}
-	rows, err := db.Query("SELECT user_id, rtx_name, chinese_name, money,win_count,bet_count FROM user ORDER BY money desc limit ?", limit)
-	handleError(err)
-	defer rows.Close()
-	if err != nil {
-		operateMySQLFailedRsp(c)
-		return
-	}
+	if DisplayRank {
+		if len(GRank) > 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"status": 0,
+				"desc":   "OK",
+				"rank":   GRank,
+			})
+		} else {
+			ranks := []RankRsp{}
+			rows, err := db.Query("SELECT user_id, rtx_name, chinese_name, money,win_count,bet_count FROM user WHERE bet_count > 0 ORDER BY money desc limit ?", limit)
+			handleError(err)
+			defer rows.Close()
+			if err != nil {
+				operateMySQLFailedRsp(c)
+				return
+			}
 
-	for rows.Next() {
-		var rank RankRsp
-		err := rows.Scan(&rank.UserID, &rank.RTXName, &rank.ChineseName, &rank.Money, &rank.WinCount, &rank.BetCount)
-		if err != nil {
-			queryMySQLFailedRsp(c)
-			return
+			for rows.Next() {
+				var rank RankRsp
+				err := rows.Scan(&rank.UserID, &rank.RTXName, &rank.ChineseName, &rank.Money, &rank.WinCount, &rank.BetCount)
+				if err != nil {
+					queryMySQLFailedRsp(c)
+					return
+				}
+				ranks = append(ranks, rank)
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"status": 0,
+				"desc":   "OK",
+				"rank":   ranks,
+			})
 		}
-		ranks = append(ranks, rank)
+	} else {
+		c.JSON(http.StatusOK, gin.H{
+			"status": 0,
+			"desc":   "OK",
+			"rank":   []RankRsp{},
+		})
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"status": 0,
-		"desc":   "OK",
-		"rank":   ranks,
-	})
 }
 
 func handleRewardHistory(c *gin.Context) {
@@ -957,6 +973,22 @@ func handleAddNewUser(c *gin.Context) {
 	})
 }
 
+func handleUpdateRanks(c *gin.Context) {
+	var req UpdateRankReq
+	if c.Bind(&req) != nil {
+		illegalParametersRsp(c)
+		return
+	}
+
+	DisplayRank = req.EnableDisplayRank
+	GRank = req.Rank
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": 0,
+		"desc":   "OK",
+	})
+}
+
 func init() {
 	parseConfig()
 	db = sqlDB()
@@ -1015,6 +1047,7 @@ func main() {
 	router.POST("/add_tips", handleAddTips)
 	router.POST("/upload_pictures", handleUploadPictures)
 	router.POST("/add_new_user", handleAddNewUser)
+	router.POST("/update_ranks", handleUpdateRanks)
 
 	router.Static("/assets", "./assets")
 	router.Run(config.ServerPort)
