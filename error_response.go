@@ -110,3 +110,10 @@ func uploadFileFailed(c *gin.Context) {
 		"desc":   "Upload file failed",
 	})
 }
+
+func addNewUserFailed(c *gin.Context) {
+	c.JSON(http.StatusInternalServerError, gin.H{
+		"status": 16,
+		"desc":   "Add new user failed",
+	})
+}

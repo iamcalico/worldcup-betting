@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-go build main.go error_response.go user_authorize.go
+go build main.go error_response.go user_authorize.go global.go type.go
 mkdir -p release
 mv main release/worldcup-betting
 cp config.toml release/

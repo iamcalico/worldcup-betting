@@ -5,27 +5,51 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"os"
 	"strings"
 )
 
-var (
-	timiUserWhiteList = make(map[string]string)
-)
-
-func readUserFile(file string) {
-	in, err := ioutil.ReadFile(file)
+// TODO: 更为优雅的做法是抽象出一个公共函数
+func readUserFile(original string, newUser string) {
+	f, err := os.OpenFile(config.TimiNewUser, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
-		log.Fatalf("read user file: %v failed, error: %v\n", file, err)
+		log.Fatalf("create file %v failed, reason: %v\n", config.TimiNewUser, err)
 	}
-	r := csv.NewReader(strings.NewReader(string(in)))
+	timiNewUsers = f
+
+	originalIn, err := ioutil.ReadFile(original)
+	if err != nil {
+		log.Fatalf("read user file: %v failed, error: %v\n", original, err)
+	}
+	originalRead := csv.NewReader(strings.NewReader(string(originalIn)))
+
+	newUserIn, err := ioutil.ReadFile(newUser)
+	if err != nil {
+		log.Fatalf("read user file: %v failed, error: %v\n", newUserIn, err)
+	}
+	newUserRead := csv.NewReader(strings.NewReader(string(newUserIn)))
 
 	for {
-		record, err := r.Read()
+		record, err := originalRead.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			log.Fatalf("parse user file: %v failed, error: %v\n", file, err)
+			log.Fatalf("parse user file: %v failed, error: %v\n", original, err)
+		}
+
+		if len(record) != 0 {
+			timiUserWhiteList[record[1]] = record[2]
+		}
+	}
+
+	for {
+		record, err := newUserRead.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Fatalf("parse user file: %v failed, error: %v\n", newUser, err)
 		}
 
 		if len(record) != 0 {
@@ -41,4 +65,16 @@ func isIllegalUser(chineseName, englishName string) bool {
 		}
 	}
 	return false
+}
+
+func addNewUser(file *os.File, chineseName, englishName string) bool {
+	timiUserWhiteList[chineseName] = englishName
+	record := []string{"X", chineseName, englishName}
+	w := csv.NewWriter(file)
+	if err := w.Write(record); err != nil {
+		handleError(err)
+		return false
+	}
+	w.Flush()
+	return true
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -15,197 +16,6 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/spf13/viper"
 )
-
-var (
-	db         *sql.DB
-	countryMap = map[string]int{
-		"待定":    0,
-		"俄罗斯":   1,
-		"沙特阿拉伯": 2,
-		"埃及":    3,
-		"乌拉圭":   4,
-		"摩洛哥":   5,
-		"伊朗":    6,
-		"葡萄牙":   7,
-		"西班牙":   8,
-		"法国":    9,
-		"澳大利亚":  10,
-		"阿根廷":   11,
-		"冰岛":    12,
-		"秘鲁":    13,
-		"丹麦":    14,
-		"克罗地亚":  15,
-		"尼日利亚":  16,
-		"哥斯达黎加": 17,
-		"塞尔维亚":  18,
-		"德国":    19,
-		"墨西哥":   20,
-		"巴西":    21,
-		"瑞士":    22,
-		"瑞典":    23,
-		"韩国":    24,
-		"比利时":   25,
-		"巴拿马":   26,
-		"突尼斯":   27,
-		"英格兰":   28,
-		"哥伦比亚":  29,
-		"日本":    30,
-		"波兰":    31,
-		"塞内加尔":  32,
-	}
-)
-
-type CountryInfo struct {
-	CountryID     int    `json:"id"`
-	CountryName   string `json:"name"`
-	CountryPicURL string `json:"logo"`
-}
-
-var CountryInfoList = []CountryInfo{
-	{0, "待定", "unknown"},
-	{1, "俄罗斯", "http://flags.fmcdn.net/data/flags/w1160/ru.png"},
-	{2, "沙特阿拉伯", "http://flags.fmcdn.net/data/flags/w1160/sa.png"},
-	{3, "埃及", "http://flags.fmcdn.net/data/flags/w1160/eg.png"},
-	{4, "乌拉圭", "http://flags.fmcdn.net/data/flags/w1160/uy.png"},
-	{5, "摩洛哥", "http://flags.fmcdn.net/data/flags/w1160/ma.png"},
-	{6, "伊朗", "http://flags.fmcdn.net/data/flags/w1160/ir.png"},
-	{7, "葡萄牙", "http://flags.fmcdn.net/data/flags/w1160/pt.png"},
-	{8, "西班牙", "http://flags.fmcdn.net/data/flags/w1160/es.png"},
-	{9, "法国", "http://flags.fmcdn.net/data/flags/w1160/fr.png"},
-	{10, "澳大利亚", "http://flags.fmcdn.net/data/flags/w1160/au.png"},
-	{11, "阿根廷", "http://flags.fmcdn.net/data/flags/w1160/ar.png"},
-	{12, "冰岛", "http://flags.fmcdn.net/data/flags/w1160/is.png"},
-	{13, "秘鲁", "http://flags.fmcdn.net/data/flags/w1160/pe.png"},
-	{14, "丹麦", "http://flags.fmcdn.net/data/flags/w1160/dk.png"},
-	{15, "克罗地亚", "http://flags.fmcdn.net/data/flags/w1160/hr.png"},
-	{16, "尼日利亚", "http://flags.fmcdn.net/data/flags/w1160/ng.png"},
-	{17, "哥斯达黎加", "http://flags.fmcdn.net/data/flags/w1160/cr.png"},
-	{18, "塞尔维亚", "http://flags.fmcdn.net/data/flags/w1160/rs.png"},
-	{19, "德国", "http://flags.fmcdn.net/data/flags/w1160/de.png"},
-	{20, "墨西哥", "http://flags.fmcdn.net/data/flags/w1160/mx.png"},
-	{21, "巴西", "http://flags.fmcdn.net/data/flags/w1160/br.png"},
-	{22, "瑞士", "http://flags.fmcdn.net/data/flags/w1160/ch.png"},
-	{23, "瑞典", "http://flags.fmcdn.net/data/flags/w1160/se.png"},
-	{24, "韩国", "http://flags.fmcdn.net/data/flags/w1160/kr.png"},
-	{25, "比利时", "http://flags.fmcdn.net/data/flags/w1160/be.png"},
-	{26, "巴拿马", "http://flags.fmcdn.net/data/flags/w1160/pa.png"},
-	{27, "突尼斯", "http://flags.fmcdn.net/data/flags/w1160/tn.png"},
-	{28, "英格兰", "https://upload.wikimedia.org/wikipedia/en/thumb/b/be/Flag_of_England.svg/800px-Flag_of_England.svg.png"},
-	{29, "哥伦比亚", "http://flags.fmcdn.net/data/flags/w1160/co.png"},
-	{30, "日本", "http://flags.fmcdn.net/data/flags/w1160/jp.png"},
-	{31, "波兰", "http://flags.fmcdn.net/data/flags/w1160/pl.png"},
-	{32, "塞内加尔", "http://flags.fmcdn.net/data/flags/w1160/sn.png"},
-}
-
-type ScheduleType int
-
-const (
-	GroupMatches       ScheduleType = 0 // 小组赛
-	RoundEight                          // 八强赛
-	FinalFour                           // 四强赛
-	Semifinal                           // 半决赛
-	MatchForThirdPlace                  // 季军赛
-	Finals                              // 总决赛
-	All
-)
-
-type ScheduleStatus int
-
-const (
-	NotStarted  ScheduleStatus = 0 // 未开始
-	HomeTeamWin                    // 主队胜利
-	AwayTeamWin                    // 客队胜利
-	Draw                           // 平局
-)
-
-type BetStatus int
-
-const (
-	BetNotFinish = 0
-	WinBet       = 1
-	LostBet      = 2
-)
-
-var config Config
-var GdisplayFileList = []string{}
-
-// 每个 Schedule 代表一场世界杯赛事
-type Schedule struct {
-	ScheduleID      int            `json:"schedule_id"`        // 赛事 ID，用以唯一标识每场比赛
-	HomeTeam        string         `json:"home_team"`          // 主队
-	AwayTeam        string         `json:"away_team"`          // 客队
-	HomeTeamWinOdds float64        `json:"home_team_win_odds"` // 主队胜利的赔率
-	AwayTeamWinOdds float64        `json:"away_team_win_odds"` // 客队胜利的赔率
-	TiedOdds        float64        `json:"tied_odds"`          // 平局的赔率
-	ScheduleTime    string         `json:"schedule_time"`      // 比赛时间
-	ScheduleGroup   string         `json:"schedule_group"`     // 比赛组别
-	ScheduleType    ScheduleType   `json:"schedule_type"`      // 比赛类别
-	ScheduleStatus  ScheduleStatus `json:"schedule_status"`    // 比赛状态
-	DisableBetting  bool           `json:"disable_betting"`    // 是否允许投注
-	EnableDisplay   bool           `json:"enable_dispaly"`     // 是否显示在投注页
-}
-
-type Schedule2 struct {
-	ScheduleID      int            `json:"schedule_id"`               // 赛事 ID，用以唯一标识每场比赛
-	HomeTeam        int            `json:"home_team"`                 // 主队
-	AwayTeam        int            `json:"away_team"`                 // 客队
-	HomeTeamWinOdds float64        `json:"home_team_win_odds"`        // 主队胜利的赔率
-	AwayTeamWinOdds float64        `json:"away_team_win_odds"`        // 客队胜利的赔率
-	TiedOdds        float64        `json:"tied_odds"`                 // 平局的赔率
-	ScheduleTime    string         `json:"schedule_time"`             // 比赛时间
-	ScheduleGroup   string         `json:"schedule_group"`            // 比赛组别
-	ScheduleType    ScheduleType   `json:"schedule_type"`             // 比赛类别
-	ScheduleStatus  ScheduleStatus `json:"schedule_status,omitempty"` // 比赛状态
-	DisableBetting  bool           `json:"disable_betting"`           // 是否允许投注
-	EnableDisplay   bool           `json:"enable_dispaly"`            // 是否显示在投注页
-}
-
-type User struct {
-	UserId              int     `json:"user_id"`
-	EnglishName         string  `json:"en_name"`
-	ChineseName         string  `json:"cn_name"`
-	Password            string  `json:"password"`
-	Money               float64 `json:"money"`
-	EnableResetPassword bool    `json:"enable_reset_password"`
-	LastLoginTime       string  `json:"last_login_time"`
-	WinCount            int     `json:"omitempty"`
-	BetCount            int     `json:"bet_count"`
-}
-
-type RewardHistory struct {
-	UserId      int    `json:"user_id"`
-	RewardTime  string `json:"reward_time"`
-	RewardMoney int    `json:"reward_money"`
-}
-
-type BetRequest struct {
-	UserId        int     `json:"user_id"`
-	ScheduleId    int     `json:"schedule_id"`
-	BettingMoney  int     `json:"betting_money"`
-	BettingResult int     `json:"betting_result"`
-	BettingOdds   float64 `json:"betting_odds"`
-	BettingStatus int     `json:"bet_status"`
-	WinMoney      float64 `json:"win_money"`
-}
-
-type AuthorizeRequest struct {
-	ChineseName string `json:"ch_name"`  // 中文名
-	EnglishName string `json:"en_name"`  // 英文名
-	Password    string `json:"password"` // MD5 之后的密码
-}
-
-type Config struct {
-	MySQLUser        string `mapstructure:"mysql_server"`
-	MySQLPassword    string `mapstructure:"mysql_password"`
-	MySQLNet         string `mapstructure:"mysql_net"`
-	MySQLDBName      string `mapstructure:"mysql_db_name"`
-	MySQLAddr        string `mapstructure:"mysql_addr"`
-	CSVNameList      string `mapstructure:"csv_name_list"`
-	InitialMoney     int    `mapstructure:"initial_money"`
-	DailyRewardMoney int    `mapstructure:"daily_reward_money"`
-	EnableWhiteList  bool   `mapstructure:"enable_white_list"`
-	DomainName       string `mapstructure:"domain_name"`
-}
 
 func sqlDB() *sql.DB {
 	cfg := mysql.Config{
@@ -484,8 +294,9 @@ func handleNewSchedule(c *gin.Context) {
 		return
 	}
 
-	rows, _ := db.Query("SELECT schedule_id FROM schedule WHERE schedule_time = ? and home_team = ? and away_team = ? ",
+	rows, err := db.Query("SELECT schedule_id FROM schedule WHERE schedule_time = ? and home_team = ? and away_team = ? ",
 		schedule.ScheduleTime, schedule.HomeTeam, schedule.AwayTeam)
+	handleError(err)
 	defer rows.Close()
 	// 如果已经有了这场赛事，就不再插入，避免重复的创建动作
 	if rows.Next() {
@@ -531,6 +342,7 @@ func handleBet(c *gin.Context) {
 	// 验证这场赛事已经可以下注
 	var disableBetting bool
 	rows, err := db.Query("SELECT disable_betting FROM schedule WHERE schedule_id = ?", betRequest.ScheduleId)
+	handleError(err)
 	defer rows.Close()
 	if err != nil {
 		operateMySQLFailedRsp(c)
@@ -643,6 +455,7 @@ func handleAuthorize(c *gin.Context) {
 	// 判读是否第一次登陆，如果是第一次登陆，则数据库中找不到相应的记录
 	rows, err := db.Query("SELECT * FROM user WHERE chinese_name = ? and rtx_name = ?",
 		authorizeRequest.ChineseName, authorizeRequest.EnglishName)
+	handleError(err)
 	defer rows.Close()
 	if err != nil {
 		queryMySQLFailedRsp(c)
@@ -719,6 +532,7 @@ func isDailyReward(userID int, loginTimeStamp int64) bool {
 	upperBound := tm.Format("2006-01-02") + " 23:59:59"
 	rows, err := db.Query("SELECT * FROM reward WHERE user_id = ? and reward_time > ? and reward_time < ?",
 		userID, lowerBound, upperBound)
+	handleError(err)
 	if err != nil {
 		log.Fatalf("query db failed, error: %v\n", err)
 	}
@@ -742,6 +556,7 @@ func handleBettingHistory(c *gin.Context) {
 
 	betHistory := []BetRequest{}
 	rows, err := db.Query("SELECT * FROM bet WHERE user_id = ?", userID)
+	handleError(err)
 	defer rows.Close()
 	if err != nil {
 		log.Fatalf("query db failed, error: %v\n", err)
@@ -771,6 +586,7 @@ func handleResetPassword(c *gin.Context) {
 	}
 	rows, err := db.Query("SELECT * FROM user WHERE chinese_name = ? and rtx_name = ?",
 		authorizeRequest.ChineseName, authorizeRequest.EnglishName)
+	handleError(err)
 	if err != nil {
 		queryMySQLFailedRsp(c)
 		fmt.Fprintf(os.Stderr, "query schedule failed, err: %v\n", err)
@@ -812,18 +628,8 @@ func handleResetPassword(c *gin.Context) {
 }
 
 // TODO: 加一个授权更新密码的接口
-// TODO: 加一个增加用户的接口
 func handleGrantResetPassword(c *gin.Context) {
 
-}
-
-type RankRsp struct {
-	UserID      int     `json:"user_id"`
-	RTXName     string  `json:"en_name"`
-	ChineseName string  `json:"cn_name"`
-	Money       float64 `json:"money"`
-	WinCount    int     `json:"win_count"`
-	BetCount    int     `json:"bet_count"`
 }
 
 func handleRank(c *gin.Context) {
@@ -834,6 +640,7 @@ func handleRank(c *gin.Context) {
 
 	ranks := []RankRsp{}
 	rows, err := db.Query("SELECT user_id, rtx_name, chinese_name, money,win_count,bet_count FROM user ORDER BY money desc limit ?", limit)
+	handleError(err)
 	defer rows.Close()
 	if err != nil {
 		operateMySQLFailedRsp(c)
@@ -860,14 +667,15 @@ func handleRewardHistory(c *gin.Context) {
 	userID := c.Query("user_id")
 
 	rewardHistory := []RewardHistory{}
-	rows, _ := db.Query("SELECT user_id,reward_time,reward_money FROM reward WHERE user_id = ?", userID)
+	rows, err := db.Query("SELECT user_id,reward_time,reward_money FROM reward WHERE user_id = ?", userID)
+	handleError(err)
 	defer rows.Close()
 	for rows.Next() {
 		var history RewardHistory
 		err := rows.Scan(&history.UserId, &history.RewardTime, &history.RewardMoney)
-		fmt.Fprintf(os.Stderr, "rows Scan failed, error: %v\n", err)
+		handleError(err)
 		if err != nil {
-			queryMySQLFailedRsp(c)
+			operateMySQLFailedRsp(c)
 			return
 		}
 		rewardHistory = append(rewardHistory, history)
@@ -880,7 +688,8 @@ func handleRewardHistory(c *gin.Context) {
 }
 
 func rankNumber(userID int) int {
-	rows, _ := db.Query("SELECT u.rank FROM (select user_id, (@ranknum:=@ranknum+1) as rank from user,(select (@ranknum :=0) ) b order by money desc)u where u.user_id = ?", userID)
+	rows, err := db.Query("SELECT u.rank FROM (select user_id, (@ranknum:=@ranknum+1) as rank from user,(select (@ranknum :=0) ) b order by money desc)u where u.user_id = ?", userID)
+	handleError(err)
 	defer rows.Close()
 	if rows.Next() {
 		var rank int
@@ -898,7 +707,8 @@ func handleMyInfo(c *gin.Context) {
 		return
 	}
 	isDailyReward := isDailyReward(userID2, time.Now().Unix())
-	rows, _ := db.Query("SELECT user_id,rtx_name,chinese_name,money,win_count,bet_count FROM user WHERE user_id = ?", userID2)
+	rows, err := db.Query("SELECT user_id,rtx_name,chinese_name,money,win_count,bet_count FROM user WHERE user_id = ?", userID2)
+	handleError(err)
 	defer rows.Close()
 	rank := rankNumber(userID2)
 	if rows.Next() {
@@ -926,10 +736,6 @@ func handleMyInfo(c *gin.Context) {
 	}
 }
 
-type DailyRewardRequest struct {
-	UserID int `json:"user_id"`
-}
-
 func handleDailyReward(c *gin.Context) {
 	var req DailyRewardRequest
 	if c.Bind(&req) != nil {
@@ -940,8 +746,10 @@ func handleDailyReward(c *gin.Context) {
 	timestamp := time.Now().Unix()
 	if isDailyReward(req.UserID, timestamp) {
 		tm := time.Unix(timestamp, 0)
-		stmt, _ := db.Prepare("INSERT INTO " + "reward(user_id, reward_time, reward_money) " + "VALUES (?,?,?)")
-		_, err := stmt.Exec(req.UserID, tm.Format("2006-01-02 15:03:04"), config.DailyRewardMoney)
+		stmt, err := db.Prepare("INSERT INTO " + "reward(user_id, reward_time, reward_money) " + "VALUES (?,?,?)")
+		handleError(err)
+		_, err = stmt.Exec(req.UserID, tm.Format("2006-01-02 15:03:04"), config.DailyRewardMoney)
+		handleError(err)
 		defer stmt.Close()
 		if err != nil {
 			operateMySQLFailedRsp(c)
@@ -951,6 +759,7 @@ func handleDailyReward(c *gin.Context) {
 
 		var money float64
 		rows, err := db.Query("SELECT money FROM user WHERE user_id = ?", req.UserID)
+		handleError(err)
 		defer rows.Close()
 		if err != nil {
 			operateMySQLFailedRsp(c)
@@ -964,7 +773,8 @@ func handleDailyReward(c *gin.Context) {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 				return
 			}
-			stmt, _ = db.Prepare("UPDATE user SET money = ? where user_id = ?")
+			stmt, err = db.Prepare("UPDATE user SET money = ? where user_id = ?")
+			handleError(err)
 			stmt.Exec(money+float64(config.DailyRewardMoney), req.UserID)
 			defer stmt.Close()
 			c.JSON(http.StatusOK, gin.H{
@@ -989,18 +799,9 @@ func handleCountry(c *gin.Context) {
 	})
 }
 
-type Tips struct {
-	TipsID        int    `json:"tips_id"`
-	Content       string `json:"content"`
-	EnableDisplay bool   `json:"enable_display"`
-}
-
-type AddTipsRequest struct {
-	TipsList []Tips `json:"tips"`
-}
-
 func handleTips(c *gin.Context) {
 	rows, err := db.Query("SELECT * FROM tips")
+	handleError(err)
 	defer rows.Close()
 	if err != nil {
 		operateMySQLFailedRsp(c)
@@ -1041,6 +842,7 @@ func handleAddTips(c *gin.Context) {
 			return
 		}
 		result, err := stmt.Exec(t.TipsID, t.Content, t.EnableDisplay)
+		handleError(err)
 		defer stmt.Close()
 		if err != nil {
 			operateMySQLFailedRsp(c)
@@ -1088,14 +890,39 @@ func handleDisplay(c *gin.Context) {
 	})
 }
 
+func handleAddNewUser(c *gin.Context) {
+	var newUserReq AddNewUserReq
+	if c.Bind(&newUserReq) != nil {
+		illegalParametersRsp(c)
+		return
+	}
+
+	if addNewUser(timiNewUsers, newUserReq.ChineseName, newUserReq.EnglishName) != true {
+		addNewUserFailed(c)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status": 0,
+		"desc":   "OK",
+	})
+}
+
 func init() {
 	parseConfig()
 	db = sqlDB()
-	readUserFile(config.CSVNameList)
+
+	readUserFile(config.CSVNameList, config.TimiNewUser)
 	if _, err := os.Stat("assets"); os.IsNotExist(err) {
 		if err := os.Mkdir("assets", 0755); err != nil {
 			log.Fatalf("create assets failed, error: %v\n", err)
 		}
+	}
+}
+
+func handleError(err error) {
+	if err != nil {
+		_, fn, line, _ := runtime.Caller(1)
+		log.Printf("[error] %s:%d %v", fn, line, err)
 	}
 }
 
@@ -1137,6 +964,7 @@ func main() {
 	router.POST("/grant_reset_password", handleGrantResetPassword)
 	router.POST("/add_tips", handleAddTips)
 	router.POST("/upload_pictures", handleUploadPictures)
+	router.POST("/add_new_user", handleAddNewUser)
 
 	router.Static("/assets", "./assets")
 	router.Run(":9614")
