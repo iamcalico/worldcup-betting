@@ -860,11 +860,12 @@ func handleRewardHistory(c *gin.Context) {
 	userID := c.Query("user_id")
 
 	rewardHistory := []RewardHistory{}
-	rows, _ := db.Query("SELECT * FROM reward WHERE user_id = ?", userID)
+	rows, _ := db.Query("SELECT user_id,reward_time,reward_money FROM reward WHERE user_id = ?", userID)
 	defer rows.Close()
 	for rows.Next() {
 		var history RewardHistory
 		err := rows.Scan(&history.UserId, &history.RewardTime, &history.RewardMoney)
+		fmt.Fprintf(os.Stderr, "rows Scan failed, error: %v\n", err)
 		if err != nil {
 			queryMySQLFailedRsp(c)
 			return
