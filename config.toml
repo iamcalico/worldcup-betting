@@ -9,3 +9,4 @@ initial_money = 5000
 daily_reward_money = 50
 enable_white_list = true
 domain_name = "http://localhost:9614"
+server_port = ":9614"

@@ -967,5 +967,5 @@ func main() {
 	router.POST("/add_new_user", handleAddNewUser)
 
 	router.Static("/assets", "./assets")
-	router.Run(":9614")
+	router.Run(config.ServerPort)
 }

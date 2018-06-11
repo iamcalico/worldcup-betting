@@ -129,6 +129,7 @@ type Config struct {
 	EnableWhiteList  bool   `mapstructure:"enable_white_list"`
 	DomainName       string `mapstructure:"domain_name"`
 	TimiNewUser      string `mapstructure:"timi_new_user"`
+	ServerPort       string `mapstructure:"server_port"`
 }
 
 type Tips struct {
