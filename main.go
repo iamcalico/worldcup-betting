@@ -540,6 +540,16 @@ func handleAuthorize(c *gin.Context) {
 			fmt.Fprintf(os.Stderr, "insert schedule failed, result:%v, err: %v\n", result, err)
 			return
 		}
+		tm := time.Unix(loginTimeStamp, 0)
+		stmt, err = db.Prepare("INSERT INTO " + "reward(user_id, reward_time, reward_money) " + "VALUES (?,?,?)")
+		handleError(err)
+		_, err = stmt.Exec(lastId, tm.Format("2006-01-02 15:03:04"), config.InitialMoney)
+		handleError(err)
+		if err != nil {
+			operateMySQLFailedRsp(c)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "user_id": lastId, "money": config.InitialMoney, "first_login": true})
 	}
 }
