@@ -139,6 +139,11 @@ type Tips struct {
 }
 
 type AddNewUserReq struct {
-	ChineseName string `json:"cn_name"`
+	ChineseName string `json:"ch_name"`
+	EnglishName string `json:"en_name"`
+}
+
+type GrantResetPassword struct {
+	ChineseName string `json:"ch_name"`
 	EnglishName string `json:"en_name"`
 }

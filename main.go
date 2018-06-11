@@ -478,23 +478,41 @@ func handleAuthorize(c *gin.Context) {
 		if user.Password != authorizeRequest.Password {
 			fmt.Fprintf(os.Stderr, "incorrect password, [ch_name:%v, en_name:%v], want: %v, got: %v\n",
 				user.ChineseName, user.EnglishName, user.Password, authorizeRequest.Password)
-			incorrectPasswordRsp(c)
-			return
+			if user.EnableResetPassword != true {
+				incorrectPasswordRsp(c)
+				return
+			}
 		}
 
 		// 更新登陆时间
-		stmt, err := db.Prepare("UPDATE user SET money = ?, last_login_time = ? WHERE user_id = ?")
-		defer stmt.Close()
-		if err != nil {
-			updateMySQLFailedRsp(c)
-			fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
-			return
-		}
-		result, err := stmt.Exec(user.Money, loginTime, user.UserId)
-		if err != nil {
-			updateMySQLFailedRsp(c)
-			fmt.Fprintf(os.Stderr, "update schedule failed, result:%v, err: %v\n", result, err)
-			return
+		if user.EnableResetPassword {
+			stmt, err := db.Prepare("UPDATE user SET money = ?, last_login_time = ?, enable_reset_password = ?, password = ? WHERE user_id = ?")
+			defer stmt.Close()
+			if err != nil {
+				updateMySQLFailedRsp(c)
+				fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
+				return
+			}
+			result, err := stmt.Exec(user.Money, loginTime, false, authorizeRequest.Password, user.UserId)
+			if err != nil {
+				updateMySQLFailedRsp(c)
+				fmt.Fprintf(os.Stderr, "update schedule failed, result:%v, err: %v\n", result, err)
+				return
+			}
+		} else {
+			stmt, err := db.Prepare("UPDATE user SET money = ?, last_login_time = ? WHERE user_id = ?")
+			defer stmt.Close()
+			if err != nil {
+				updateMySQLFailedRsp(c)
+				fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
+				return
+			}
+			result, err := stmt.Exec(user.Money, loginTime, user.UserId)
+			if err != nil {
+				updateMySQLFailedRsp(c)
+				fmt.Fprintf(os.Stderr, "update schedule failed, result:%v, err: %v\n", result, err)
+				return
+			}
 		}
 
 		c.JSON(http.StatusOK, gin.H{"status": 0, "desc": "OK", "user_id": user.UserId, "money": user.Money})
@@ -627,9 +645,41 @@ func handleResetPassword(c *gin.Context) {
 	}
 }
 
-// TODO: 加一个授权更新密码的接口
 func handleGrantResetPassword(c *gin.Context) {
+	var grantResetPasswordReq GrantResetPassword
+	if c.Bind(&grantResetPasswordReq) != nil {
+		illegalParametersRsp(c)
+		return
+	}
 
+	rows, err := db.Query("SELECT user_id FROM user WHERE rtx_name = ? and chinese_name = ?",
+		grantResetPasswordReq.EnglishName, grantResetPasswordReq.ChineseName)
+	defer rows.Close()
+	handleError(err)
+	if rows.Next() {
+		var userID int
+		err := rows.Scan(&userID)
+		handleError(err)
+		if err != nil {
+			operateMySQLFailedRsp(c)
+			return
+		}
+		stmt, err := db.Prepare("UPDATE user SET enable_reset_password = ? WHERE user_id = ?")
+		defer stmt.Close()
+		handleError(err)
+		if err != nil {
+			operateMySQLFailedRsp(c)
+			return
+		}
+		stmt.Exec(true, userID)
+		c.JSON(http.StatusOK, gin.H{
+			"status": 0,
+			"desc":   "OK",
+		})
+	} else {
+		userNotExist(c)
+		return
+	}
 }
 
 func handleRank(c *gin.Context) {
