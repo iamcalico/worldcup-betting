@@ -51,7 +51,7 @@ var (
 		"哥伦比亚":  29,
 		"日本":    30,
 		"波兰":    31,
-		"塞纳加尔":  32,
+		"塞内加尔":  32,
 	}
 )
 
@@ -1092,8 +1092,10 @@ func init() {
 	parseConfig()
 	db = sqlDB()
 	readUserFile(config.CSVNameList)
-	if err := os.Mkdir("assets", 0755); err != nil {
-		log.Fatalf("create assets failed, error: %v\n", err)
+	if _, err := os.Stat("assets"); os.IsNotExist(err) {
+		if err := os.Mkdir("assets", 0755); err != nil {
+			log.Fatalf("create assets failed, error: %v\n", err)
+		}
 	}
 }
 
