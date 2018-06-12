@@ -117,3 +117,10 @@ func addNewUserFailed(c *gin.Context) {
 		"desc":   "Add new user failed",
 	})
 }
+
+func overSchedueTime(c *gin.Context) {
+	c.JSON(http.StatusInternalServerError, gin.H{
+		"status": 17,
+		"desc":   "Over schedule time",
+	})
+}

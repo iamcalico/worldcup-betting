@@ -263,8 +263,8 @@ func handleUpdateSchedule(c *gin.Context) {
 						rows.Scan(&money, &win_count)
 					}
 					stmt, _ := db.Prepare("UPDATE user SET money = ?,win_count = ? WHERE user_id = ?")
-					win_money = float64(betRequest.BettingMoney) * betRequest.BettingOdds
-					currentMoney := win_money + money
+					win_money = float64(betRequest.BettingMoney) * (betRequest.BettingOdds - 1)
+					currentMoney := win_money + money + float64(betRequest.BettingMoney)
 					stmt.Exec(currentMoney, win_count+1, betRequest.UserId)
 				} else {
 					betStatus = LostBet
@@ -340,8 +340,13 @@ func handleBet(c *gin.Context) {
 	}
 
 	// 验证这场赛事已经可以下注
-	var disableBetting bool
-	rows, err := db.Query("SELECT disable_betting FROM schedule WHERE schedule_id = ?", betRequest.ScheduleId)
+	var (
+		disableBetting bool
+		scheduleTime   string
+		betTime        int64 = time.Now().Unix()
+	)
+
+	rows, err := db.Query("SELECT disable_betting,schedule_time FROM schedule WHERE schedule_id = ?", betRequest.ScheduleId)
 	handleError(err)
 	defer rows.Close()
 	if err != nil {
@@ -350,7 +355,7 @@ func handleBet(c *gin.Context) {
 		return
 	}
 	if rows.Next() {
-		err := rows.Scan(&disableBetting)
+		err := rows.Scan(&disableBetting, &scheduleTime)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "scan rows: %v failed, error: %v\n", rows, err)
 			operateMySQLFailedRsp(c)
@@ -360,6 +365,29 @@ func handleBet(c *gin.Context) {
 			disableBet(c)
 			return
 		} else {
+			// 验证是不是超过投注时间
+			t, err := time.Parse("2006-01-02 15:04:05", scheduleTime)
+			if err != nil {
+				fmt.Println(err)
+			}
+			if betTime > t.Unix() {
+				stmt, err := db.Prepare("UPDATE schedule SET disable_betting = ? WHERE schedule_id = ?")
+				defer stmt.Close()
+				if err != nil {
+					operateMySQLFailedRsp(c)
+					fmt.Fprintf(os.Stderr, "sql prepare failed, err: %v\n", err)
+					return
+				}
+				// 把这场比赛设置为不可投注
+				result, err := stmt.Exec(true, betRequest.ScheduleId)
+				if err != nil {
+					operateMySQLFailedRsp(c)
+					fmt.Fprintf(os.Stderr, "update schedule failed, result:%v, err: %v\n", result, err)
+					return
+				}
+				overSchedueTime(c)
+				return
+			}
 			// 验证用户是否已经对这场比赛下过注
 			rows, err := db.Query("SELECT * FROM bet WHERE user_id = ? and schedule_id = ?",
 				betRequest.UserId, betRequest.ScheduleId)
@@ -1062,3 +1090,20 @@ func main() {
 	router.Static("/assets", "./assets")
 	router.Run(config.ServerPort)
 }
+
+//package main
+//
+//import (
+//	"fmt"
+//	"time"
+//)
+//
+//func main() {
+//	str := "2014-11-12 11:45:26"
+//	t, err := time.Parse("2006-01-02 15:04:05", str)
+//
+//	if err != nil {
+//		fmt.Println(err)
+//	}
+//	fmt.Println(t.Unix())
+//}

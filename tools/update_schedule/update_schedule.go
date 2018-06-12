@@ -54,7 +54,7 @@ var schedules = []NewScheduleReq{
 	{
 		1, "俄罗斯", "沙特阿拉伯",
 		homeTeamWinOdds, awayTeamWinOdds, tiedOdds,
-		"2018-06-14 23:00:00", "A", 0, 0, false, true,
+		"2018-06-01 23:00:00", "A", 0, 0, false, true,
 	},
 	{
 		2, "埃及", "乌拉圭",
@@ -374,7 +374,7 @@ var schedules = []NewScheduleReq{
 }
 
 const (
-	reqURL = "http://z1.zhengyinyong.com:9614/update_schedule"
+	reqURL = "http://localhost:9614/update_schedule"
 )
 
 func updateAll() {
@@ -396,8 +396,12 @@ func updateAll() {
 	}
 }
 
-func updateSchedule(id int) {
-	jsonData, err := json.Marshal(schedules[id-1])
+func updateSchedule(id int, status int, enableDisplay bool, disableDetting bool) {
+	schedule := schedules[id-1]
+	schedule.ScheduleStatus = status
+	schedule.EnableDisplay = enableDisplay
+	schedule.DisableBetting = disableDetting
+	jsonData, err := json.Marshal(schedule)
 	if err != nil {
 		log.Fatalf("json marshal error: %v\n", err)
 	}
@@ -414,6 +418,6 @@ func updateSchedule(id int) {
 }
 
 func main() {
-	updateSchedule(1)
+	updateSchedule(1, 1, false, false)
 	//updateAll()
 }
