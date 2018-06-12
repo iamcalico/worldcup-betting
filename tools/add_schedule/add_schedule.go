@@ -366,7 +366,7 @@ var schedules = []NewScheduleReq{
 }
 
 const (
-	reqURL = "http://z1.zhengyinyong.com:9614/new_schedule"
+	reqURL = "http://z2.zhengyinyong.com:9614/new_schedule"
 )
 
 func main() {

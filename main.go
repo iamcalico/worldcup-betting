@@ -764,7 +764,7 @@ func handleRewardHistory(c *gin.Context) {
 }
 
 func rankNumber(userID int) int {
-	rows, err := db.Query("SELECT u.rank FROM (select user_id, (@ranknum:=@ranknum+1) as rank from user,(select (@ranknum :=0) ) b order by money desc)u where u.user_id = ?", userID)
+	rows, err := db.Query("SELECT u.rank FROM (select user_id, bet_count, (@ranknum:=@ranknum+1) as rank from user,(select (@ranknum :=0) ) b order by money desc)u where u.user_id = ? and u.bet_count > 0", userID)
 	handleError(err)
 	defer rows.Close()
 	if rows.Next() {
