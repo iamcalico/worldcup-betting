@@ -1090,20 +1090,3 @@ func main() {
 	router.Static("/assets", "./assets")
 	router.Run(config.ServerPort)
 }
-
-//package main
-//
-//import (
-//	"fmt"
-//	"time"
-//)
-//
-//func main() {
-//	str := "2014-11-12 11:45:26"
-//	t, err := time.Parse("2006-01-02 15:04:05", str)
-//
-//	if err != nil {
-//		fmt.Println(err)
-//	}
-//	fmt.Println(t.Unix())
-//}
