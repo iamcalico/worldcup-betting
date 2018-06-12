@@ -39,7 +39,7 @@ func readUserFile(original string, newUser string) {
 		}
 
 		if len(record) != 0 {
-			timiUserWhiteList[record[1]] = record[2]
+			timiUserWhiteList[record[2]] = record[1]
 		}
 	}
 
@@ -53,14 +53,14 @@ func readUserFile(original string, newUser string) {
 		}
 
 		if len(record) != 0 {
-			timiUserWhiteList[record[1]] = record[2]
+			timiUserWhiteList[record[2]] = record[1]
 		}
 	}
 }
 
 func isIllegalUser(chineseName, englishName string) bool {
-	if name, isPresent := timiUserWhiteList[chineseName]; isPresent {
-		if name == englishName {
+	if name, isPresent := timiUserWhiteList[englishName]; isPresent {
+		if name == chineseName {
 			return true
 		}
 	}
