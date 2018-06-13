@@ -44,7 +44,7 @@ func operateMySQLFailedRsp(c *gin.Context) {
 func illegalUserRsp(c *gin.Context) {
 	c.JSON(http.StatusBadRequest, gin.H{
 		"status": 6,
-		"desc":   "Illegal User",
+		"desc":   "用户未授权",
 	})
 }
 
@@ -58,7 +58,7 @@ func queryUserFailedRsp(c *gin.Context) {
 func incorrectPasswordRsp(c *gin.Context) {
 	c.JSON(http.StatusBadRequest, gin.H{
 		"status": 8,
-		"desc":   "Incorrect password",
+		"desc":   "密码错误",
 	})
 }
 

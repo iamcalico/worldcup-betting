@@ -68,7 +68,7 @@ func isIllegalUser(chineseName, englishName string) bool {
 }
 
 func addNewUser(file *os.File, chineseName, englishName string) bool {
-	timiUserWhiteList[chineseName] = englishName
+	timiUserWhiteList[englishName] = chineseName
 	record := []string{"X", chineseName, englishName}
 	w := csv.NewWriter(file)
 	if err := w.Write(record); err != nil {
