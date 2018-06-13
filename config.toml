@@ -7,6 +7,6 @@ csv_name_list = "timi_users.csv"
 timi_new_user="timi_new_users.csv"
 initial_money = 5000
 daily_reward_money = 50
-enable_white_list = false
+enable_white_list = true
 domain_name = "http://localhost:9614"
 server_port = ":9614"

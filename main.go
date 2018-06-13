@@ -263,7 +263,7 @@ func handleUpdateSchedule(c *gin.Context) {
 						rows.Scan(&money, &win_count)
 					}
 					stmt, _ := db.Prepare("UPDATE user SET money = ?,win_count = ? WHERE user_id = ?")
-					win_money = float64(betRequest.BettingMoney) * (betRequest.BettingOdds - 1)
+					win_money = float64(betRequest.BettingMoney) * (betRequest.BettingOdds)
 					currentMoney := win_money + money + float64(betRequest.BettingMoney)
 					stmt.Exec(currentMoney, win_count+1, betRequest.UserId)
 				} else {

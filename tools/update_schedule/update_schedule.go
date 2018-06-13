@@ -54,7 +54,7 @@ var schedules = []NewScheduleReq{
 	{
 		1, "俄罗斯", "沙特阿拉伯",
 		homeTeamWinOdds, awayTeamWinOdds, tiedOdds,
-		"2018-06-01 23:00:00", "A", 0, 0, false, true,
+		"2018-06-14 23:00:00", "A", 0, 0, false, true,
 	},
 	{
 		2, "埃及", "乌拉圭",
@@ -364,7 +364,7 @@ var schedules = []NewScheduleReq{
 	{
 		63, "待定", "待定",
 		homeTeamWinOdds, awayTeamWinOdds, tiedOdds,
-		"2018-07-14 22:00:00", "X", 4, 0, false, true,
+		"2018-07-14 22:00:00", "X", 4, 0, true, true,
 	},
 	{
 		64, "待定", "待定",
@@ -374,7 +374,7 @@ var schedules = []NewScheduleReq{
 }
 
 const (
-	reqURL = "http://localhost:9614/update_schedule"
+	reqURL = "http://111.230.64.233:9614/update_schedule"
 )
 
 func updateAll() {
@@ -418,6 +418,6 @@ func updateSchedule(id int, status int, enableDisplay bool, disableDetting bool)
 }
 
 func main() {
-	updateSchedule(1, 1, false, false)
-	//updateAll()
+	//updateSchedule(3, 2, true, true)
+	updateAll()
 }
